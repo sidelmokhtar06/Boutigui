@@ -1,0 +1,34 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+.metadata
+
+# Éditeurs
+*.iml
+.idea/
+.vscode/
+
+# Secrets — NE JAMAIS VERSIONNER.
+# `.env.local` contient l'URL du projet Supabase et la clé anon, lues par
+# run_local.sh. La clé anon est publique par conception, mais la publier
+# désigne le projet à qui voudrait sonder ses règles RLS : elle reste hors
+# du dépôt.
+.env.local
+.env
+*.env
+
+# Sauvegardes locales des retouches de design (voir undo_design.sh)
+.design-backup-*/
+.design-backup-latest
+
+# Signature Android — un keystore ne se versionne jamais
+android/key.properties
+**/*.jks
+**/*.keystore
+
+# Divers
+*.log
+.DS_Store

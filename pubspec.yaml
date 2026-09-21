@@ -1,0 +1,76 @@
+name: marketplace
+description: Marketplace de livraison multi-vendeurs — Mauritanie
+publish_to: 'none'
+version: 0.1.0
+
+environment:
+  # Relevé de 3.3.0 à 3.5.0 le 6 septembre 2026 : geolocator 14 exige au
+  # moins Dart 3.5, et `flutter pub get` refuse une dépendance dont la
+  # borne minimale est plus haute que celle du projet. Le Flutter installé
+  # chez Emina est bien plus récent, donc rien à réinstaller.
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  supabase_flutter: ^2.5.6
+  provider: ^6.1.2
+  cached_network_image: ^3.3.1
+  intl: ^0.19.0
+  url_launcher: ^6.3.0
+  # Position de livraison (6 septembre 2026) — voir
+  # lib/services/location_service.dart. Pas d'API Google Maps : on demande
+  # la position au téléphone, et la vendeuse l'ouvre ensuite dans Google
+  # Maps par un simple lien (aucune clé, aucun compte de facturation).
+ 
+  # Compression des photos avant envoi (9 septembre 2026) — voir
+  # lib/services/image_compressor.dart. Bibliothèque en Dart pur : marche
+  # aussi bien sur le web que sur Android, sans plugin natif.
+  image: ^4.3.0
+  image_picker: ^1.1.2
+  # `google_fonts` retiré entièrement le 15 septembre 2026 — voir
+  # core/theme.dart pour l'explication complète. Aucune version du paquet
+  # n'est compatible avec Flutter 3.27.4 (Dart 3.13.1) : les versions
+  # 6.x ont un bug de compilation ("Constant evaluation error" sur une
+  # comparaison de FontWeight, corrigé seulement en 7.x/8.x), mais ces
+  # versions corrigées exigent elles-mêmes Flutter 3.35+, plus récent que
+  # celui utilisé ici. Polices système par défaut à la place.
+  flutter_svg: ^2.0.10+1
+  pdf: ^3.13.1
+  printing: ^5.15.1
+
+dev_dependencies:
+  # `flutter_test` retiré le 15 septembre 2026 : plus aucun test dans le
+  # projet (celui par défaut, jamais adapté, a été supprimé), et il
+  # entrait en conflit avec `objective_c` 9.6.0 sur la version du paquet
+  # `collection` — voir le workaround `objective_c` plus bas dans ce
+  # fichier. `flutter_test` verrouille `collection` à 1.19.0 pile, alors
+  # qu'`objective_c` 9.6.0 exige `^1.19.1` : aucune version ne pouvait
+  # satisfaire les deux à la fois.
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+
+# Correction du 15 septembre 2026, deuxième passe — la tentative précédente
+# (forcer objective_c: 9.6.0 + collection: 1.19.1) faisait disparaître le
+# conflit "collection" mais en révélait un autre derrière : objective_c
+# 9.6.0 exige aussi `code_assets ^2.0.0`, qui lui-même exige Dart >=3.10 —
+# alors que Flutter 3.27 (~/flutter327) embarque Dart 3.6.2. Ce n'était
+# donc pas réparable en changeant la version d'objective_c : TOUTES les
+# versions ≥ 9.2.1 exigent Dart >=3.10 (voir le changelog du paquet).
+#
+# Racine du problème : rien dans ce projet n'importe `objective_c`
+# directement. Il arrive uniquement via `path_provider_foundation`, dont
+# les versions 2.5.0/2.6.0 sont passées à une implémentation FFI qui en
+# dépend. Plutôt que de forcer une version incompatible d'objective_c,
+# on force `path_provider_foundation` à la dernière version d'AVANT ce
+# passage à FFI — 2.4.2, celle dont le changelog indique explicitement
+# "Updates minimum supported SDK version to Flutter 3.27/Dart 3.6", donc
+# pile ce qu'utilise ~/flutter327. objective_c n'entre alors plus du tout
+# dans le graphe de dépendances : plus besoin de l'y forcer.
+dependency_overrides:
+  path_provider_foundation: 2.4.2

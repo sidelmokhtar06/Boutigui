@@ -1,0 +1,30 @@
+# Configuration Netlify — 15 septembre 2026.
+#
+# Sans ce fichier, Netlify ne sait pas que ce projet est une app Flutter :
+# il faut installer Flutter lui-même sur le serveur de build, puis lancer
+# `flutter build web` avec les bonnes clés Supabase (--dart-define), sans
+# quoi l'app démarre sans savoir à quel projet Supabase se connecter — ce
+# qui donne exactement l'erreur "Invalid API key".
+#
+# **Les vraies valeurs vont dans Netlify, PAS ici** : Site settings >
+# Environment variables > ajouter SUPABASE_URL et SUPABASE_ANON_KEY. Ce
+# fichier ne fait que les relayer à la commande de build ; les mettre en
+# clair ici les enverrait dans le dépôt Git (public si le repo l'est).
+# **15 septembre 2026 : `--web-renderer html` ajouté.** web/index.html
+# charge les polices Google Fonts en CSS classique en partant du principe
+# que l'app tourne avec le renderer HTML (voir son commentaire) — mais
+# cette ligne de commande ne le demandait jamais explicitement, donc
+# `flutter build web` retombait sur CanvasKit par défaut. CanvasKit dessine
+# tout sur un unique canevas WebGL : c'est la cause la plus probable des
+# "photos noires" et des artefacts de texte dupliqué pendant le défilement
+# remontés sur Safari iPhone (mémoire graphique saturée). Le renderer HTML
+# dessine avec de vraies balises `<img>`/DOM, insensible à ce problème.
+[build]
+  publish = "build/web"
+  command = "git clone --depth 1 -b 3.27.4 https://github.com/flutter/flutter.git /tmp/flutter && export PATH=\"/tmp/flutter/bin:$PATH\" && flutter pub get && flutter build web --release --web-renderer html --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY"
+
+[build.environment]
+  # Empêche Netlify d'essayer d'installer des dépendances Node : ce n'est
+  # pas un projet JavaScript, la ligne `command` ci-dessus se charge de
+  # tout (y compris installer Flutter lui-même).
+  NPM_FLAGS = "--version"
