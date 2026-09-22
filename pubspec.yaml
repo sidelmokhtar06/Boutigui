@@ -45,12 +45,20 @@ dependencies:
   # avant même `flutter build web`. `build/web` n'étant jamais créé,
   # Netlify n'avait rien à publier — d'où « published deploy: NONE ».
   #
-  # Versions retenues : les plus récentes qui acceptent encore Dart 3.6.2
-  # (vérifié sur les métadonnées pub.dev, pas sur les changelogs) —
-  # `pdf` 3.12.0 (sdk >=2.19.0 <4.0.0) et `printing` 5.14.3 (sdk
-  # >=3.3.0 <4.0.0). `printing` 5.14.3 demande `pdf ^3.10.0`, que 3.12.0
-  # satisfait : les deux bornes sont cohérentes entre elles.
-  pdf: ^3.12.0
+  # Versions retenues : les plus récentes qui RÉSOLVENT réellement sous
+  # Flutter 3.27.4, vérifié en lançant `flutter pub get` avec ce SDK
+  # précis (~/flutter327) — et non en lisant les métadonnées pub.dev.
+  #
+  # La nuance compte : `pdf` 3.12.0 déclare `sdk: >=2.19.0 <4.0.0`, donc
+  # semble parfaitement compatible avec Dart 3.6.2. Il dépend pourtant de
+  # `vector_math ^2.2.0`, alors que le SDK Flutter 3.27 ÉPINGLE
+  # `vector_math` à 2.1.4. Le conflit est donc transitif, invisible dans
+  # la contrainte SDK du paquet lui-même : seule une vraie résolution le
+  # montre. 3.11.3 est la dernière version d'avant ce passage à
+  # `vector_math` 2.2.
+  #
+  # `printing` 5.14.3 demande `pdf ^3.10.0`, que 3.11.3 satisfait.
+  pdf: ^3.11.3
   printing: ^5.14.3
 
 dev_dependencies:
