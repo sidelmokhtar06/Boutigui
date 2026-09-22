@@ -106,9 +106,23 @@ class AuthService extends ChangeNotifier {
   /// Supabase → Authentication → Sign In / Providers → Google.
   Future<String?> signInWithGoogle() async {
     try {
+      // `Uri.base.origin` et NON `Uri.base.toString()` (corrigé le
+      // 22 septembre 2026).
+      //
+      // Sur le web, `Uri.base` est l'URL COMPLÈTE de la page courante —
+      // fragment et paramètres compris. Or au retour de Google, cette URL
+      // contient `#access_token=...` : une deuxième tentative renvoyait
+      // donc cette adresse-là comme cible de redirection. Supabase compare
+      // `redirectTo` à sa liste d'URL autorisées ; une adresse portant un
+      // fragment n'y figure évidemment pas, et la connexion échoue ou
+      // retombe silencieusement sur l'« URL du site ».
+      //
+      // `.origin` ne garde que `schéma://hôte[:port]` — une valeur stable,
+      // identique à chaque tentative, et donc facile à déclarer une fois
+      // pour toutes côté Supabase.
       await _client.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? Uri.base.toString() : null,
+        redirectTo: kIsWeb ? Uri.base.origin : null,
       );
       return null;
     } on AuthException catch (e) {
