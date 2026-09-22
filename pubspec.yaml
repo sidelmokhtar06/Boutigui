@@ -37,8 +37,21 @@ dependencies:
   # versions corrigées exigent elles-mêmes Flutter 3.35+, plus récent que
   # celui utilisé ici. Polices système par défaut à la place.
   flutter_svg: ^2.0.10+1
-  pdf: ^3.13.1
-  printing: ^5.15.1
+  # **Abaissés le 22 septembre 2026 — le build Netlify échouait ICI.**
+  #
+  # `pdf` 3.13.1 et `printing` 5.15.1 exigent tous deux Dart >=3.12.0.
+  # Or `netlify.toml` épingle Flutter 3.27.4, qui embarque Dart 3.6.2 :
+  # `flutter pub get` n'avait donc AUCUNE solution possible et s'arrêtait
+  # avant même `flutter build web`. `build/web` n'étant jamais créé,
+  # Netlify n'avait rien à publier — d'où « published deploy: NONE ».
+  #
+  # Versions retenues : les plus récentes qui acceptent encore Dart 3.6.2
+  # (vérifié sur les métadonnées pub.dev, pas sur les changelogs) —
+  # `pdf` 3.12.0 (sdk >=2.19.0 <4.0.0) et `printing` 5.14.3 (sdk
+  # >=3.3.0 <4.0.0). `printing` 5.14.3 demande `pdf ^3.10.0`, que 3.12.0
+  # satisfait : les deux bornes sont cohérentes entre elles.
+  pdf: ^3.12.0
+  printing: ^5.14.3
 
 dev_dependencies:
   # `flutter_test` retiré le 15 septembre 2026 : plus aucun test dans le
@@ -59,18 +72,28 @@ flutter:
 # (forcer objective_c: 9.6.0 + collection: 1.19.1) faisait disparaître le
 # conflit "collection" mais en révélait un autre derrière : objective_c
 # 9.6.0 exige aussi `code_assets ^2.0.0`, qui lui-même exige Dart >=3.10 —
-# alors que Flutter 3.27 (~/flutter327) embarque Dart 3.6.2. Ce n'était
-# donc pas réparable en changeant la version d'objective_c : TOUTES les
-# versions ≥ 9.2.1 exigent Dart >=3.10 (voir le changelog du paquet).
+# alors que Flutter 3.27 (~/flutter327) embarque Dart 3.6.2.
 #
 # Racine du problème : rien dans ce projet n'importe `objective_c`
 # directement. Il arrive uniquement via `path_provider_foundation`, dont
-# les versions 2.5.0/2.6.0 sont passées à une implémentation FFI qui en
-# dépend. Plutôt que de forcer une version incompatible d'objective_c,
-# on force `path_provider_foundation` à la dernière version d'AVANT ce
-# passage à FFI — 2.4.2, celle dont le changelog indique explicitement
-# "Updates minimum supported SDK version to Flutter 3.27/Dart 3.6", donc
-# pile ce qu'utilise ~/flutter327. objective_c n'entre alors plus du tout
-# dans le graphe de dépendances : plus besoin de l'y forcer.
+# les versions 2.5.0 et suivantes sont passées à une implémentation FFI qui
+# en dépend. On force donc `path_provider_foundation` à une version
+# d'AVANT ce passage à FFI : `objective_c` n'entre alors plus du tout dans
+# le graphe de dépendances.
+#
+# **Corrigé le 22 septembre 2026 : 2.4.2 -> 2.4.1.** La version épinglée
+# ici était 2.4.2, au motif — écrit noir sur blanc dans ce fichier — que
+# son changelog annonçait « Flutter 3.27 / Dart 3.6 ». Les métadonnées
+# RÉELLEMENT publiées de 2.4.2 disent l'inverse : `sdk: ^3.7.0`,
+# `flutter: >=3.29.0`. Autrement dit, la contrainte ajoutée pour garder le
+# projet compatible avec Flutter 3.27 était elle-même incompatible avec
+# Flutter 3.27 — et, étant une version EXACTE dans `dependency_overrides`,
+# pub ne pouvait pas la contourner : il devait prendre 2.4.2 ou échouer.
+# C'était l'une des trois causes du build cassé.
+#
+# 2.4.1 déclare `sdk: ^3.3.0` / `flutter: >=3.19.0`, donc compatible avec
+# Dart 3.6.2, et ne dépend que de `flutter` et
+# `path_provider_platform_interface` — pas d'`objective_c`. La raison
+# d'être de cet override tient donc toujours.
 dependency_overrides:
-  path_provider_foundation: 2.4.2
+  path_provider_foundation: 2.4.1

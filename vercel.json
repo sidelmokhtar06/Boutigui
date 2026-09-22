@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "installCommand": "echo 'pas de dependances Node — voir buildCommand'",
+  "buildCommand": "git clone --depth 1 -b 3.27.4 https://github.com/flutter/flutter.git /tmp/flutter && export PATH=\"/tmp/flutter/bin:$PATH\" && flutter pub get && flutter build web --release --web-renderer html --dart-define=SUPABASE_URL=$SUPABASE_URL --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY",
+  "outputDirectory": "build/web"
+}
