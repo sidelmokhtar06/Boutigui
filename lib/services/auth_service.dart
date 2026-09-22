@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
@@ -14,9 +15,17 @@ class AuthService extends ChangeNotifier {
   Profile? _profile;
   bool _loading = true;
 
+  StreamSubscription<AuthState>? _authSub;
+
   AuthService() {
-    _client.auth.onAuthStateChange.listen((_) => _syncProfile());
+    _authSub = _client.auth.onAuthStateChange.listen((_) => _syncProfile());
     _syncProfile();
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   Profile? get profile => _profile;

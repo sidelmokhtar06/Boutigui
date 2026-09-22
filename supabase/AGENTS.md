@@ -20,6 +20,7 @@ order is the one written below, and nothing enforces it for you.
 | `fintech_patch.sql` | Server side amount integrity and payment status. Adds `orders.payment_status` / `payment_provider` / `payment_verified_at`, retarifies every `order_items` row from `products`, recomputes `orders.total` |
 | `payment_amount_patch.sql` | The amount actually received, recorded by the vendor at verification, and the gap against the order total |
 | `fintech_tests.sql` | Nine assertions proving `fintech_patch.sql` and `payment_amount_patch.sql` hold. Runs in a rolled back transaction, changes nothing |
+| `correctifs_patch.sql` | Eight fixes found by the 21 September 2026 audit: driver self approval, order line append after payment, stock never decremented, client cancellation, review rewriting by the shop, two shops per account, non atomic checkout (`create_order`), drivers jumping the vendor's workflow |
 | `demo_seed.sql` | Hackathon demo dataset. Needs the vendor account to exist first, created from the app |
 | `recompresser_photos.py` | One off script, recompresses photos already uploaded to storage |
 
@@ -47,6 +48,25 @@ Fake customers it creates itself.
 
 ## Gotchas
 
+- **`marketplace_schema.sql` is the one file that is NOT re runnable.** Its
+  12 `create table` and 9 `create index` statements have no `if not exists`,
+  so a second run fails on `relation "profiles" already exists`. It is the
+  base schema, meant for an empty project; every later file in the list is
+  genuinely safe to replay. (Found 21 September 2026 — this section used to
+  claim every file was replayable.)
+- **A policy cannot reason column by column.** `using (id = auth.uid())`
+  lets the owner change *every* column of their row, including one a later
+  patch adds. That is exactly how `driver_profiles.status` became self
+  serviceable: `livreur_patch_3_approval.sql` added an admin approval
+  column to a table whose self update policy predated it, and nothing
+  re read the two together. When a new column must not be set by the row's
+  own owner, add a trigger — `prevent_self_role_change`,
+  `prevent_self_shop_activation`, `prevent_self_driver_approval`.
+- **Two more load bearing strings**, alongside
+  `orders_payment_reference_unique`: `order_item_stock_guard` raises a
+  message beginning with `STOCK_INSUFFISANT`, and `create_order` is the
+  only path the app uses to place an order. `order_service.dart` matches on
+  the first and calls the second by name.
 - **A policy is not a grant.** A table added by a later patch does not inherit
   the base `select`/`insert` right for the `authenticated` role, so a correct
   RLS policy still fails with `permission denied for table ...`. This already

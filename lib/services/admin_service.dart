@@ -197,8 +197,16 @@ class AdminService {
   /// Profils utilisables comme propriétaire d'une nouvelle boutique.
   Future<List<Profile>> fetchProfiles({String? search}) async {
     var query = _client.from('profiles').select();
-    if (search != null && search.isNotEmpty) {
-      query = query.or('full_name.ilike.%$search%,email.ilike.%$search%');
+    // `or()` prend une CHAÎNE de filtres PostgREST, pas une valeur
+    // paramétrée : tout ce qu'on y interpole est lu comme de la syntaxe.
+    // Une recherche contenant une virgule ou une parenthèse — « Brahim,
+    // Jr » — cassait donc le filtre et faisait échouer la requête, et la
+    // forme générale laissait écrire n'importe quel filtre PostgREST.
+    // Nettoyé le 21 septembre 2026 (audit). Les autres recherches du
+    // projet passent par `ilike()`, qui paramètre correctement sa valeur.
+    final cleaned = _sanitizeOrFilterValue(search);
+    if (cleaned.isNotEmpty) {
+      query = query.or('full_name.ilike.%$cleaned%,email.ilike.%$cleaned%');
     }
     final rows = await query.order('created_at', ascending: false).limit(50);
     return rows.map((r) => Profile.fromMap(r)).toList();
@@ -485,10 +493,28 @@ class AdminService {
     return rows.map((r) => OrderItemModel.fromMap(r)).toList();
   }
 
+  /// Voir la note de `VendorService.updateOrderStatus` : un `update`
+  /// refusé par RLS ne lève pas d'erreur, d'où le `.select()`.
   Future<void> updateOrderStatus(String id, String status) async {
-    await _client.from('orders').update({
+    if (!kOrderStatuses.contains(status)) {
+      throw ArgumentError.value(status, 'status', 'Statut de commande inconnu');
+    }
+    final updated = await _client.from('orders').update({
       'status': status,
       if (status == 'confirmed') 'confirmed_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
+    }).eq('id', id).select('id');
+    if (updated.isEmpty) {
+      throw Exception(
+        "Le statut de la commande n'a pas pu être enregistré (la base a "
+        'refusé la modification).',
+      );
+    }
   }
+
+  /// Retire d'une recherche les caractères qui sont de la SYNTAXE pour
+  /// PostgREST dans un `or()` : virgule (séparateur de filtres),
+  /// parenthèses (groupement), point (séparateur colonne/opérateur) et les
+  /// guillemets. Ce qui reste ne peut plus que servir de texte cherché.
+  static String _sanitizeOrFilterValue(String? raw) =>
+      (raw ?? '').replaceAll(RegExp(r'[,()."\\:]'), ' ').trim();
 }

@@ -5,7 +5,7 @@ import 'app_config.dart';
 import 'core/settings_controller.dart';
 import 'core/theme.dart';
 import 'features/not_configured_screen.dart';
-import 'features/shell.dart';
+import 'features/splash_screen.dart';
 import 'services/auth_service.dart';
 import 'services/cart_controller.dart';
 import 'services/notification_service.dart';
@@ -115,7 +115,7 @@ class MarketplaceApp extends StatelessWidget {
               textDirection: settings.textDirection,
               child: child!,
             ),
-            home: Shell(),
+            home: const SplashGate(),
           );
         },
       ),

@@ -43,7 +43,12 @@ class CartController extends ChangeNotifier {
     final room = product.stock - currentQty;
     final addable = quantity < room ? quantity : (room > 0 ? room : 0);
     final wasCapped = addable < quantity;
-    if (addable <= 0) return true;
+    // Le plafond du panier est un CONFORT d'affichage : c'est la base qui
+    // tranche, depuis `order_item_stock_guard` (correctifs_patch.sql,
+    // partie 3). `product.stock` date du moment où la fiche a été
+    // chargée ; entre-temps, quelqu'un d'autre a pu acheter le dernier
+    // article. Deux clientes ne peuvent plus l'obtenir toutes les deux.
+    if (addable <= 0) return wasCapped;
     if (existing != null) {
       existing.quantity += addable;
     } else {

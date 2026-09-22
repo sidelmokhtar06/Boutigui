@@ -13,7 +13,7 @@ the SQL schema column for column.
 |---|---|
 | `catalog_service.dart` | Public reads: shops, categories, products, banners, collections |
 | `auth_service.dart` | Sign in (Google only), profile sync, account deletion |
-| `order_service.dart` | Checkout, payment proof upload, vendor applications |
+| `order_service.dart` | Checkout (through the `create_order` RPC), payment proof upload, vendor applications |
 | `vendor_service.dart` | The shop owner's own shop, products, photos |
 | `admin_service.dart` | Everything the admin console writes |
 | `delivery_service.dart` | Driver space, all through RPCs |
@@ -47,7 +47,20 @@ the SQL schema column for column.
 - **A write blocked by RLS reports success.** Postgres updates zero rows
   without an error, so a missing policy looks like a silent no op. When a
   non owner writes, add `.select()` and throw if nothing comes back, as
-  `order_service.attachPaymentProof` does.
+  `vendor_service.setPaymentStatus` and `updateOrderStatus` do.
+- **Checkout goes through one RPC per shop, not three inserts.**
+  `order_service.checkout` calls `create_order`
+  (`supabase/correctifs_patch.sql`), which writes the order, its lines and
+  the delivery request in a single transaction. It returns a
+  `CheckoutOutcome`, not a list: one shop can fail while the others
+  succeed, and each shop is a separate payment the customer has already
+  made, so the screen has to say exactly which ones went through.
+- **`order_service.attachPaymentProof` and
+  `storage_service.uploadPaymentProof` have no callers.** Payment moved
+  from a screenshot to a bank reference on 6 September 2026; only the read
+  side (`signedPaymentProofUrl`) is still used, for orders placed before
+  that. Left in place deliberately — delete them if proof upload is not
+  coming back.
 - Secrets arrive only through `--dart-define` and are read in
   `lib/app_config.dart`. Never hardcode a URL or key, and never commit one.
   With none supplied the whole app renders `NotConfiguredScreen` instead of

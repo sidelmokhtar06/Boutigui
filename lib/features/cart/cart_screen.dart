@@ -36,16 +36,46 @@ class _CartScreenState extends State<CartScreen> {
     if (!mounted) return;
     final t = context.read<SettingsController>().t;
     final initialPhone = context.read<AuthService>().profile?.phone ?? '';
-    final placed = await showModalBottomSheet<bool>(
+    final outcome = await showModalBottomSheet<CheckoutOutcome>(
       context: context,
       isScrollControlled: true,
       backgroundColor: AppTheme.bg,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _CheckoutSheet(cart: cart, initialPhone: initialPhone),
     );
-    if (placed == true && mounted) {
+    if (outcome == null || !mounted) return;
+
+    // Succès partiel (21 septembre 2026) : le panier peut contenir
+    // plusieurs boutiques, donc plusieurs paiements DÉJÀ effectués dans
+    // l'application bancaire. Si l'une échoue, les autres sont quand même
+    // passées — le dire clairement, sinon la cliente croit que rien n'est
+    // parti et repaie.
+    if (!outcome.hasFailures) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t('order_confirmed'))));
+      return;
     }
+
+    final failures = outcome.failedByShop.entries.map((e) => '• ${e.key} : ${e.value}').join('\n');
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          outcome.hasSuccesses ? 'Commandes partiellement passées' : 'Commande non passée',
+        ),
+        content: Text(
+          outcome.hasSuccesses
+              ? '${outcome.createdOrderIds.length} commande(s) sont bien passées.\n\n'
+                  "Ces boutiques n'ont pas abouti et sont restées dans votre panier :\n$failures"
+              : "Aucune commande n'a été créée. Votre panier est intact.\n\n$failures",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('J\'ai compris'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -455,6 +485,16 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
     _loadShops();
   }
 
+  /// Le champ "référence" d'une boutique, créé à la demande.
+  ///
+  /// Créé à la demande plutôt que lu avec `!` (21 septembre 2026, audit) :
+  /// les contrôleurs sont construits une fois dans [initState], mais le
+  /// panier vit dans un `ChangeNotifier` partagé et peut gagner une
+  /// boutique pendant que cette feuille est ouverte. Le `!` plantait alors
+  /// l'écran au lieu d'afficher un champ vide.
+  TextEditingController _referenceFor(String shopId) =>
+      _references.putIfAbsent(shopId, () => TextEditingController());
+
   Future<void> _loadShops() async {
     for (final shopId in widget.cart.linesByShop.keys) {
       final shop = await _catalog.fetchShop(shopId);
@@ -515,7 +555,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       setState(() => _error = 'Share your location, or type your address by hand.');
       return;
     }
-    final missing = widget.cart.linesByShop.keys.any((id) => _references[id]!.text.trim().isEmpty);
+    final missing = widget.cart.linesByShop.keys.any((id) => _referenceFor(id).text.trim().isEmpty);
     if (missing) {
       setState(() => _error = 'Saisissez la référence de paiement de votre banque pour chaque boutique.');
       return;
@@ -526,11 +566,11 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
       _error = null;
     });
     try {
-      await _orderService.checkout(
+      final outcome = await _orderService.checkout(
         widget.cart,
         phone: phone,
         paymentReferencesByShop: {
-          for (final entry in _references.entries) entry.key: entry.value.text.trim(),
+          for (final id in widget.cart.linesByShop.keys) id: _referenceFor(id).text.trim(),
         },
         deliveryLat: _position?.latitude,
         deliveryLng: _position?.longitude,
@@ -538,18 +578,23 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
         deliveryMode: _deliveryMode,
       );
       if (!mounted) return;
-      Navigator.of(context).pop(true);
+      // Échec total : la feuille reste ouverte avec le message, pour que la
+      // cliente corrige une référence sans tout ressaisir. Dès qu'au moins
+      // une commande est passée, on referme et c'est l'écran panier qui
+      // détaille ce qui a abouti — le panier a changé sous la feuille.
+      if (outcome.isTotalFailure) {
+        setState(() {
+          _submitting = false;
+          _error = outcome.failedByShop.values.join('\n');
+        });
+        return;
+      }
+      Navigator.of(context).pop(outcome);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _submitting = false;
-        // Message parlant quand la base refuse une référence déjà utilisée
-        // (index unique `orders_payment_reference_unique`) : le message brut
-        // de PostgreSQL parlerait de contrainte et de nom d'index.
-        final raw = e.toString();
-        _error = raw.contains('orders_payment_reference_unique') || raw.contains('duplicate key')
-            ? 'Cette référence de paiement a déjà servi pour une autre commande.'
-            : raw.replaceFirst('Exception: ', '');
+        _error = OrderService.describeCheckoutError(e);
       });
     }
   }
@@ -632,7 +677,7 @@ class _CheckoutSheetState extends State<_CheckoutSheet> {
                   merchantCode: shop?.merchantCode,
                   merchantProvider: shop?.merchantProvider,
                   amount: Money.format(widget.cart.totalForShop(shopId)),
-                  controller: _references[shopId]!,
+                  controller: _referenceFor(shopId),
                 );
               }),
             if (_error != null) ...[

@@ -9,9 +9,18 @@ Tailwind ne s'applique pas ici.
 
 Contraintes de version qui ont déjà coûté du temps :
 
-- Flutter 3.27.4 / Dart 3.13.1 — `google_fonts` a été retiré entièrement
-  le 15 septembre 2026 faute de version compatible (voir `core/theme.dart`).
-  Vérifier la compatibilité avant d'ajouter la moindre dépendance.
+- **Le build de production est épinglé à Flutter 3.27.4 (Dart 3.6.2)** par
+  `netlify.toml`. C'est CETTE version qui fait foi. Une machine de
+  développement peut avoir un Flutter bien plus récent : `flutter analyze`
+  y signale alors une vingtaine de `deprecated_member_use`
+  (`activeColor`, `value:` des champs de formulaire, `cacheExtent`) — NE
+  PAS les « corriger », les remplacements n'existent pas en 3.27 et le
+  build de production casserait. Corrigé le 21 septembre 2026 : ce
+  paragraphe annonçait « Flutter 3.27.4 / Dart 3.13.1 », une paire qui
+  n'existe pas (3.27 embarque Dart 3.6.2, comme le dit `pubspec.yaml`).
+- `google_fonts` a été retiré entièrement le 15 septembre 2026 faute de
+  version compatible (voir `core/theme.dart`). Vérifier la compatibilité
+  avant d'ajouter la moindre dépendance.
 - Les migrations SQL se collent à la main dans l'éditeur SQL de Supabase,
   dans l'ordre listé par `supabase/AGENTS.md`. Aucun outil de migration.
 
@@ -22,6 +31,14 @@ Contraintes de version qui ont déjà coûté du temps :
 Read in this exact order before any implementation:
 
 1. `AGENTS.md` — root project context, maintained by `/audit` and `/sync`. This is the source of truth for the codebase itself.
+
+**Les fichiers `context/*.md` listés ci-dessous n'existent pas dans ce
+dépôt** (constaté le 21 septembre 2026). Le contexte réel tient dans les
+trois `AGENTS.md` : celui-ci, `supabase/AGENTS.md` et
+`lib/services/AGENTS.md`. La liste est conservée telle quelle parce
+qu'elle vient du gabarit de skills ; s'ils sont créés un jour, les lire
+dans cet ordre.
+
 2. context/project-overview.md
 3. context/architecture.md
 4. context/ui-tokens.md

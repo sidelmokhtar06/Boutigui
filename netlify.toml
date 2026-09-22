@@ -28,3 +28,20 @@
   # pas un projet JavaScript, la ligne `command` ci-dessus se charge de
   # tout (y compris installer Flutter lui-même).
   NPM_FLAGS = "--version"
+
+# **21 septembre 2026 (audit) — NE PAS relever le `-b 3.27.4` ci-dessus
+# sans relire ce paragraphe.** Deux choses y sont attachées :
+#
+#  1. `--web-renderer html` n'existe PLUS à partir de Flutter 3.29 : le
+#     drapeau a été supprimé en même temps que le renderer HTML lui-même.
+#     Relever la version fait donc échouer le build sur un drapeau inconnu,
+#     et le retirer sans plus y penser ramène CanvasKit — c'est-à-dire le
+#     bug d'origine des photos noires sur Safari iPhone (voir le
+#     paragraphe ci-dessus et les notes de lib/main.dart).
+#  2. `pubspec.yaml` force `path_provider_foundation: 2.4.2` précisément
+#     pour rester compatible avec le Dart de Flutter 3.27.
+#
+# Autrement dit : le passage à une version plus récente de Flutter est un
+# chantier à part entière (renderer + dépendances + les `deprecated_member_use`
+# que `flutter analyze` signale sous un Flutter récent), pas un changement
+# de numéro dans ce fichier.

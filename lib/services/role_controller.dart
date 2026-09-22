@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import 'delivery_service.dart';
 import 'vendor_service.dart';
@@ -23,6 +25,34 @@ import 'vendor_service.dart';
 class RoleController extends ChangeNotifier {
   final VendorService _vendor = VendorService();
   final DeliveryService _delivery = DeliveryService();
+  StreamSubscription<AuthState>? _authSub;
+
+  /// **21 septembre 2026 (audit) : le rôle suit la session tout seul.**
+  ///
+  /// [clear] n'était appelé QUE depuis le bouton « se déconnecter » de
+  /// l'écran Mon profil. Les trois autres sorties — la barre du site
+  /// admin, l'espace Livreur, l'espace Vendeuse — déconnectaient sans y
+  /// toucher : l'application continuait de se croire vendeuse (ou
+  /// livreuse) avec la boutique du compte PRÉCÉDENT en mémoire, jusqu'à ce
+  /// qu'un écran appelle `refresh()` par hasard.
+  ///
+  /// En s'abonnant ici, plus aucun appelant n'a à y penser : la session
+  /// est la seule source de vérité, comme pour `AuthService`.
+  RoleController() {
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+      if (state.event == AuthChangeEvent.signedOut) {
+        clear();
+      } else if (state.event == AuthChangeEvent.signedIn) {
+        refresh();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
+  }
 
   Shop? _shop;
   DriverProfile? _driverProfile;

@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../core/settings_controller.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
-import '../../services/cart_controller.dart';
 import '../../services/catalog_service.dart';
 import '../../services/notification_service.dart';
 import '../notifications/notifications_screen.dart';
@@ -23,10 +22,7 @@ import '../widgets.dart';
 /// "Ce que je veux la photo 2 / Ce que tu as fait la photo 1" : sur cette
 /// capture, l'heure/batterie ET le bandeau sont bien SUPERPOSÉS en blanc
 /// directement sur la photo, qui commence tout en haut de l'écran (pas de
-/// bande blanche du tout). Ce comportement a été REMPLACÉ le 20 septembre
-/// 2026 par un en-tête blanc classique — voir [_HomeHeader]. Le texte ci-
-/// dessous décrit l'ancienne disposition, conservé pour l'historique.
-/// L'ancien bandeau superposé, qui
+/// bande blanche du tout). C'est ce que fait maintenant [_PromoBanner], qui
 /// intègre le bandeau superposé (voir sa doc). Elle est aussi beaucoup plus
 /// grande (quasi plein écran). Juste en dessous : des PRODUITS à la place
 /// des catégories, INCHANGÉ depuis le 4 septembre 2026 ([_ProductShowcaseRow]
@@ -57,14 +53,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<_HomeData> _load() async {
     final products = await _catalog.fetchProducts();
-    // Catégories pour la grille « Explorer par catégorie » (20 septembre
-    // 2026, maquette) — elles portent déjà une photo (`image_url`, ajouté
-    // par rattrapage_patch.sql), donc rien à créer côté base.
-    final categories = await _catalog.fetchAllCategories();
-    // Statistiques d'inclusion — `null` tant que
-    // `supabase/inclusion_patch.sql` n'a pas été joué, la section est
-    // alors simplement masquée.
-    final inclusion = await _catalog.fetchInclusionStats();
     final favorites = await _catalog.fetchFavoriteProductIds();
     final banners = await _catalog.fetchActiveBanners();
     final discounted = await _catalog.fetchDiscountedProducts();
@@ -88,8 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     return _HomeData(
       products: products,
-      categories: categories,
-      inclusion: inclusion,
       favoriteIds: favorites,
       banners: banners,
       discounted: discounted,
@@ -110,6 +96,27 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _openSearchSheet() async {
+    final controller = TextEditingController();
+    final t = context.read<SettingsController>().t;
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.bg,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (sheetContext) => Padding(
+        padding: EdgeInsets.fromLTRB(16, 16, 16, MediaQuery.of(sheetContext).viewInsets.bottom + 16),
+        child: AppSearchField(
+          controller: controller,
+          hint: t('search_hint'),
+          onSubmitted: (q) {
+            Navigator.of(sheetContext).pop();
+            _openSearch(q);
+          },
+        ),
+      ),
+    );
+  }
 
   void _openAllProducts() {
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AllProductsScreen()));
@@ -145,10 +152,9 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final t = context.watch<SettingsController>().t;
-    // Icônes de la barre de statut en SOMBRE (20 septembre 2026) : depuis
-    // la refonte, le haut de l'écran est un en-tête BLANC et non plus une
-    // photo. Laisser l'heure et la batterie en blanc les rendait
-    // invisibles.
+    // Icônes de la barre de statut en SOMBRE (22 septembre 2026) : le haut
+    // de l'écran est de nouveau une barre BLANCHE ([_HomeTopBar]) et non
+    // plus la photo. En blanc, l'heure et la batterie seraient invisibles.
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark,
       child: Scaffold(
@@ -177,10 +183,9 @@ class _HomeScreenState extends State<HomeScreen> {
             final data = snapshot.data!;
             return RefreshIndicator(
               onRefresh: _refresh,
-              // SafeArea complet depuis le 20 septembre 2026 : l'en-tête
-              // blanc commence sous la barre de statut. Avant, `top: false`
-              // laissait la bannière passer dessous, ce qui n'a plus lieu
-              // d'être.
+              // SafeArea complet depuis le 22 septembre 2026 : l'en-tête
+              // blanc commence SOUS la barre de statut. `top: false` ne se
+              // justifiait que tant que la photo remontait jusqu'en haut.
               child: SafeArea(
                 child: ListView(
                   // **`cacheExtent` — 10 septembre 2026, RÉVISÉ le 13 puis
@@ -210,31 +215,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   // lourd) qui causait le bug d'origine.
                   cacheExtent: 800,
                   children: [
-                    // En-tête + bannière en carte (20 septembre 2026) —
-                    // remplacent l'ancien bandeau, qui superposait son
-                    // bandeau blanc à la photo. Voir le commentaire de
-                    // bloc au-dessus de [_HomeHeader].
-                    _HomeHeader(
-                      onSearch: _openSearch,
-                      onFavoritesTap: _openFavorites,
+                    // En-tête blanc puis photo, sans espace entre les deux
+                    // (22 septembre 2026) : sur la capture, la photo touche
+                    // le bas de la barre blanche. Les 8 px qui précédaient
+                    // la bannière n'ont donc plus lieu d'être ici.
+                    _HomeTopBar(
+                      onSearchTap: _openSearchSheet,
                       onNotificationsTap: _openNotifications,
-                      onCartTap: _openAllProducts,
+                      onFavoritesTap: _openFavorites,
                     ),
-                    _HeroCard(
+                    _PromoBanner(
                       imageUrls: data.banners.map((b) => b.imageUrl).toList(),
                       onTap: _openAllProducts,
                     ),
-                    const SizedBox(height: 24),
-                    _CategoryGrid(
-                      categories: data.categories,
-                      onTap: (c) => Navigator.of(context).push(
-                        MaterialPageRoute(
-                          builder: (_) => AllProductsScreen(categoryId: c.id, categoryName: c.name),
-                        ),
-                      ),
-                      onSeeAll: _openAllProducts,
-                    ),
-                    const SizedBox(height: 24),
                     // Des produits à la place des catégories, juste sous la
                     // bannière — INCHANGÉ (4 septembre 2026, nuit ; confirmé
                     // le 5 septembre 2026 : voir doc de la classe).
@@ -254,16 +247,42 @@ class _HomeScreenState extends State<HomeScreen> {
                     // (`--web-renderer html` dans netlify.toml, cache
                     // d'images réduit dans main.dart) plutôt que les
                     // remplacer.
-                    if (data.products.isNotEmpty)
+                    // **Sections verticales — 22 septembre 2026.** Les
+                    // produits se parcouraient en faisant glisser chaque
+                    // rangée vers la DROITE ; ils se parcourent maintenant
+                    // vers le BAS, deux par ligne, regroupés par thème
+                    // (Nouveautés, Réductions, collections de l'admin).
+                    //
+                    // C'est la disposition que les collections utilisaient
+                    // déjà depuis le 6 septembre 2026 — elle est
+                    // simplement étendue au reste de l'accueil, via
+                    // [_ProductGrid].
+                    //
+                    // **Plafonné à 6 par section**, et c'est le point
+                    // délicat : une rangée horizontale ne construisait que
+                    // les deux ou trois cartes visibles, alors qu'une
+                    // grille verticale garde vivantes toutes celles de la
+                    // section. Or c'est le NOMBRE de photos décodées en
+                    // même temps qui sature Safari sur iPhone (voir la
+                    // longue note de `main.dart`, et le plafond de 8 déjà
+                    // imposé aux collections dans [_load]). Six par
+                    // section laisse trois lignes pleines et reste sous ce
+                    // plafond ; « Tout voir » mène à la suite.
+                    if (data.products.isNotEmpty) ...[
+                      _SectionHeader(
+                        title: t('section_new'),
+                        seeAllLabel: t('see_all'),
+                        onSeeAll: _openAllProducts,
+                      ),
                       RepaintBoundary(
-                        child: _ProductShowcaseGrid(
-                          products: data.products,
+                        child: _ProductGrid(
+                          products: data.products.take(6).toList(),
                           favoriteIds: data.favoriteIds,
                           onToggleFavorite: (p) => _toggleFavorite(data, p),
-                          seeAllLabel: t('see_all'),
-                          onSeeAll: _openAllProducts,
+                          onOpenShop: _openShop,
                         ),
                       ),
+                    ],
                     // Collections gérées par l'admin, APRÈS la rangée
                     // ci-dessus (5 septembre 2026, nuit — voir doc de
                     // [_load]) : cette section reste vide tant qu'aucune
@@ -280,25 +299,24 @@ class _HomeScreenState extends State<HomeScreen> {
                             onOpenShop: _openShop,
                           ),
                         ),
-                    if (data.discounted.isNotEmpty)
+                    if (data.discounted.isNotEmpty) ...[
+                      // Le titre était écrit en dur en anglais
+                      // (« Discounts »), donc affiché tel quel même en
+                      // français et en arabe — il passe par `strings.dart`.
+                      _SectionHeader(title: t('section_discounts')),
                       RepaintBoundary(
-                        child: _ThemedProductRow(
-                          title: 'Discounts',
-                          products: data.discounted,
+                        child: _ProductGrid(
+                          products: data.discounted.take(6).toList(),
                           favoriteIds: data.favoriteIds,
                           onToggleFavorite: (p) => _toggleFavorite(data, p),
                           onOpenShop: _openShop,
                         ),
                       ),
+                    ],
                     // "Meilleures boutiques" retiré du menu Accueil (4
                     // septembre 2026, demande explicite d'Emina) — on
                     // accède toujours à une boutique en touchant son nom
                     // au-dessus d'un de ses produits.
-                    const SizedBox(height: 28),
-                    if (data.inclusion != null)
-                      _ImpactPanel(stats: data.inclusion!),
-                    const SizedBox(height: 16),
-                    const _TrustBar(),
                     const SizedBox(height: 28),
                   ],
                 ),
@@ -324,19 +342,258 @@ class _HomeScreenState extends State<HomeScreen> {
 /// Emina (caniche + "Women >" en blanc sur la photo, aucune bande blanche
 /// séparée). La barre de statut (heure/batterie) passe aussi en blanc,
 /// voir [HomeScreen.build].
-/// Remplace la grille "Explorer" (catégories) le 4 septembre 2026 (nuit) —
-/// Emina : "à la place de catégorie tu dois mettre des produits", captures
-/// Level (image + cœur, marque en majuscules, nom, prix). Réutilise
-/// [ProductCard] (déjà exactement ce design, aligné à gauche ici comme sur
-/// les captures plutôt que centré) en défilement horizontal, terminé par
-/// une carte "Tout voir" sobre — remplace aussi l'ancien gros bouton pleine
-/// largeur (Emina : "un bouton plus professionnel et élégant [...] essai
-/// de mettre le même size", capture "View All").
+class _PromoBanner extends StatefulWidget {
+  final List<String> imageUrls;
+  final VoidCallback onTap;
+
+  const _PromoBanner({
+    required this.imageUrls,
+    required this.onTap,
+  });
+
+  @override
+  State<_PromoBanner> createState() => _PromoBannerState();
+}
+
+class _PromoBannerState extends State<_PromoBanner> {
+  final _controller = PageController();
+  Timer? _timer;
+  int _page = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _startAutoplay();
+  }
+
+  void _startAutoplay() {
+    _timer?.cancel();
+    if (widget.imageUrls.length < 2) return;
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_controller.hasClients) return;
+      final next = (_page + 1) % widget.imageUrls.length;
+      _controller.animateToPage(next, duration: const Duration(milliseconds: 450), curve: Curves.easeInOut);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _PromoBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.imageUrls.length != widget.imageUrls.length) _startAutoplay();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.imageUrls;
+    // Corrigé le 15 septembre 2026 : avec une seule bannière (ou aucune),
+    // `dotCount` retombait avant sur 5 par défaut — des points de
+    // pagination apparaissaient donc même sans rien à faire défiler. Ils
+    // ne doivent s'afficher que s'il y a au moins deux bannières.
+    final hasMultiple = urls.length >= 2;
+    // 58 % de la hauteur d'écran — mesuré sur la capture du 22 septembre
+    // 2026 : la photo y occupe environ 510 px des ~885 px utiles entre le
+    // bas de l'en-tête et le haut de la barre d'onglets, et la première
+    // rangée de produits est déjà entamée en bas.
+    //
+    // C'était 72 % tant que la photo remontait jusque sous la barre de
+    // statut : depuis que [_HomeTopBar] lui prend une barre blanche en
+    // haut, garder 72 % repousserait les produits hors de l'écran.
+    final height = MediaQuery.sizeOf(context).height * 0.58;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: SizedBox(
+        width: double.infinity,
+        height: height,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            urls.isEmpty
+                ? Image.asset('assets/images/home_banner.jpg', fit: BoxFit.cover, width: double.infinity)
+                : PageView.builder(
+                    controller: _controller,
+                    itemCount: urls.length,
+                    onPageChanged: (i) => setState(() => _page = i),
+                    itemBuilder: (context, i) => AppImage(url: urls[i], fit: BoxFit.cover, height: height),
+                  ),
+            // Le voile dégradé et le bandeau superposé (« New in », cloche,
+            // cœur, loupe) ont été retirés le 22 septembre 2026 : ces
+            // commandes vivent maintenant dans [_HomeTopBar], au-dessus de
+            // la photo. Le dégradé n'existait que pour rendre ce texte
+            // blanc lisible sur une photo claire — sans texte par-dessus,
+            // il ne ferait qu'assombrir la photo pour rien.
+            if (hasMultiple)
+              Positioned(
+                bottom: 12,
+                left: 0,
+                right: 0,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(urls.length, (i) {
+                    final on = i == _page;
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 3),
+                      width: on ? 18 : 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: on ? Colors.white : Colors.white.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Grille de produits : DEUX PAR LIGNE, qui se déroule vers le BAS.
 ///
-/// Conservé tel quel le 5 septembre 2026 (nuit) : une première tentative
-/// l'avait remplacé par [_CollectionSection], mais Emina a précisé que
-/// cette rangée devait rester (voir doc de [HomeScreen]) — seule la rangée
-/// titrée "Nouveautés" qui suivait est remplacée par les collections.
+/// **Pourquoi une `Column` de `Row` et pas un `GridView`.** La hauteur
+/// d'une carte dépend de son contenu (en-tête vendeur + photo + trois
+/// lignes de texte), alors qu'une grille impose un rapport
+/// largeur/hauteur FIXE : au moindre écart — un nom de boutique plus
+/// long, un prix barré sur deux lignes — Flutter affiche les rayures
+/// jaunes de débordement. Ici, chaque ligne prend la hauteur qu'il lui
+/// faut. C'est la solution déjà retenue pour les collections le
+/// 10 septembre 2026 ; ce widget ne fait que la rendre réutilisable.
+///
+/// `CrossAxisAlignment.start` et surtout PAS `stretch` : cette grille vit
+/// dans une page qui défile, donc de hauteur non bornée — `stretch`
+/// demanderait aux cartes une hauteur infinie et ferait planter la mise
+/// en page.
+class _ProductGrid extends StatelessWidget {
+  final List<Product> products;
+  final Set<String> favoriteIds;
+  final ValueChanged<Product> onToggleFavorite;
+  final ValueChanged<String> onOpenShop;
+
+  const _ProductGrid({
+    required this.products,
+    required this.favoriteIds,
+    required this.onToggleFavorite,
+    required this.onOpenShop,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
+      child: Column(
+        children: [
+          for (var i = 0; i < products.length; i += 2) ...[
+            if (i > 0) const SizedBox(height: 26),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _card(context, products[i])),
+                const SizedBox(width: 14),
+                // Deuxième colonne vide quand le nombre de produits est
+                // impair : un `Expanded` vide garde la dernière carte à la
+                // même largeur que les autres au lieu de l'étirer sur
+                // toute la ligne.
+                Expanded(
+                  child: i + 1 < products.length
+                      ? _card(context, products[i + 1])
+                      : const SizedBox.shrink(),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context, Product product) {
+    // `RepaintBoundary` par carte — même raison qu'ailleurs sur cet écran
+    // (15 septembre 2026) : confiner un éventuel artefact de rendu à sa
+    // carte au lieu de le laisser baver sur la suivante.
+    return RepaintBoundary(
+      child: ProductCard(
+        key: ValueKey(product.id),
+        product: product,
+        leftAlign: true,
+        showSellerHeader: true,
+        onOpenShop: () => onOpenShop(product.shopId),
+        isFavorite: favoriteIds.contains(product.id),
+        onToggleFavorite: () => onToggleFavorite(product),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => ProductScreen(productId: product.id)),
+        ),
+      ),
+    );
+  }
+}
+
+/// En-tête d'une section de l'accueil : son titre, et à droite un
+/// « Tout voir » quand il existe un écran qui montre la suite.
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final String? seeAllLabel;
+  final VoidCallback? onSeeAll;
+
+  const _SectionHeader({required this.title, this.seeAllLabel, this.onSeeAll});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 34, 20, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
+                  color: AppTheme.ink),
+            ),
+          ),
+          if (seeAllLabel != null && onSeeAll != null)
+            GestureDetector(
+              onTap: onSeeAll,
+              child: Text(
+                seeAllLabel!,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: AppTheme.ink,
+                  decoration: TextDecoration.underline,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Une "collection" — bannière secondaire (photo + titre + sous-titre
+/// optionnel) suivie d'une rangée de produits choisis par l'admin, ajoutée
+/// le 5 septembre 2026 (nuit) en remplacement de l'ancienne rangée sans
+/// titre juste sous la bannière principale (Emina : "enlevé [...] ce qui est
+/// après juste la bannière pour mettre une nouvelle bannière", exemple "Hermès
+/// for Less" — photo + titre + phrase d'accroche — "Les produits sont
+/// présentés de cette manière exactement mais vers le bas", en référence à
+/// la même disposition que la grille de produits façon Level déjà utilisée
+/// ailleurs sur l'accueil : réutilise donc [ProductCard] plutôt qu'une
+/// nouvelle mise en page).
+///
+/// Peut être répétée plusieurs fois sur l'accueil — l'admin choisit, pour
+/// chaque collection, une catégorie précise ou "tous mélangés", et combien
+/// de produits afficher (site admin > Collections).
 class _CollectionSection extends StatelessWidget {
   final HomeCollection collection;
   final List<Product> products;
@@ -420,153 +677,26 @@ class _CollectionSection extends StatelessWidget {
             ],
           ),
         ),
-        // Grille de 2 produits par ligne, qui se déroule VERS LE BAS
-        // (Emina, 6 septembre 2026 : "les produits après la deuxième
-        // bannière il doit être deux par pages [...] j'avance pas vers la
-        // droite mais vers le bas"). Avant, c'était une rangée qui
-        // défilait horizontalement.
-        //
-        // Construite en `Column` de `Row` plutôt qu'en `GridView` : la
-        // hauteur d'une carte dépend de son contenu (en-tête vendeur +
-        // photo + 3 lignes de texte), alors qu'une grille impose un
-        // rapport largeur/hauteur fixe — au moindre écart, Flutter
-        // afficherait les rayures jaunes de débordement. Ici chaque ligne
-        // prend la hauteur qu'il lui faut.
-        //
-        // `CrossAxisAlignment.start` et surtout PAS `stretch` : cette
-        // rangée vit dans une page qui défile, donc de hauteur non bornée
-        // — `stretch` demanderait aux cartes de faire une hauteur infinie
-        // et ferait planter la mise en page. Les deux cartes d'une ligne
-        // ont de toute façon la même hauteur (mêmes éléments, textes
-        // limités à une ligne).
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 4),
-          child: Column(
-            children: [
-              for (var i = 0; i < products.length; i += 2) ...[
-                if (i > 0) const SizedBox(height: 26),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: _collectionCard(context, products[i])),
-                    const SizedBox(width: 14),
-                    // Deuxième colonne vide quand le nombre de produits est
-                    // impair : un `Expanded` vide garde la dernière carte à
-                    // la même largeur que les autres au lieu de l'étirer
-                    // sur toute la ligne.
-                    Expanded(
-                      child: i + 1 < products.length ? _collectionCard(context, products[i + 1]) : const SizedBox.shrink(),
-                    ),
-                  ],
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _collectionCard(BuildContext context, Product product) {
-    return ProductCard(
-      product: product,
-      leftAlign: true,
-      showSellerHeader: true,
-      onOpenShop: () => onOpenShop(product.shopId),
-      isFavorite: favoriteIds.contains(product.id),
-      onToggleFavorite: () => onToggleFavorite(product),
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => ProductScreen(productId: product.id)),
-      ),
-    );
-  }
-}
-
-/// Liste horizontale thématique — façon Oskelly : le nom de la boutique
-/// au-dessus de chaque produit ([ProductFeedCard]). Utilisée pour
-/// "Nouveautés" et "Réductions".
-class _ThemedProductRow extends StatelessWidget {
-  final String title;
-  final List<Product> products;
-  final Set<String> favoriteIds;
-  final ValueChanged<Product> onToggleFavorite;
-  final ValueChanged<String> onOpenShop;
-
-  const _ThemedProductRow({
-    required this.title,
-    required this.products,
-    required this.favoriteIds,
-    required this.onToggleFavorite,
-    required this.onOpenShop,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Même spec que _ProductShowcaseRow (15 septembre 2026) : largeur ≈
-    // 40 % de l'écran, image 5:7, espacement 6 px, coins carrés. +30 px de
-    // hauteur ici pour la mini-ligne boutique (avatar + nom) au-dessus de
-    // la photo, propre à [ProductFeedCard].
-    final cardWidth = MediaQuery.sizeOf(context).width * 0.4;
-    const imageRatio = 0.714;
-    // +16 de marge de sécurité supplémentaire, même raison que
-    // _ProductShowcaseRow (voir sa doc).
-    final cardHeight = cardWidth / productGridAspectRatio(cardWidth, imageRatio: imageRatio) + 30 + 16;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 34, 20, 14),
-          child: Text(title, style: const TextStyle(fontSize: 19, fontWeight: FontWeight.w600, letterSpacing: -0.3, color: AppTheme.ink)),
-        ),
-        ClipRect(
-          child: SizedBox(
-          height: cardHeight,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(left: 16),
-            itemCount: products.length,
-            itemBuilder: (context, i) {
-              final product = products[i];
-              return Padding(
-                key: ValueKey(product.id),
-                padding: const EdgeInsets.only(right: 6),
-                child: SizedBox(
-                  width: cardWidth,
-                  // RepaintBoundary par carte, en plus de celui posé sur
-                  // toute la section (home_screen.dart, plus haut) — 15
-                  // septembre 2026, deuxième passage sur le même
-                  // signalement persistant : granularité plus fine, pour
-                  // isoler chaque carte individuellement si l'artefact
-                  // vient d'une carte précise plutôt que de la section
-                  // entière.
-                  child: RepaintBoundary(
-                    child: ProductFeedCard(
-                      product: product,
-                      imageAspectRatio: imageRatio,
-                      borderRadius: BorderRadius.zero,
-                      isFavorite: favoriteIds.contains(product.id),
-                      onToggleFavorite: () => onToggleFavorite(product),
-                      onShopTap: () => onOpenShop(product.shopId),
-                      onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => ProductScreen(productId: product.id)),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          ),
+        // Même grille que les autres sections de l'accueil depuis le
+        // 22 septembre 2026 : cette disposition « deux par ligne, vers le
+        // bas » est née ici (Emina, 6 septembre 2026 : « les produits [...]
+        // j'avance pas vers la droite mais vers le bas ») puis a été
+        // étendue au reste de la page. Le code vit maintenant dans
+        // [_ProductGrid], en un seul exemplaire.
+        _ProductGrid(
+          products: products,
+          favoriteIds: favoriteIds,
+          onToggleFavorite: onToggleFavorite,
+          onOpenShop: onOpenShop,
         ),
       ],
     );
   }
 }
+
 
 class _HomeData {
   final List<Product> products;
-  final List<Category> categories;
-  final Map<String, int>? inclusion;
   final Set<String> favoriteIds;
   final List<HomeBanner> banners;
   final List<Product> discounted;
@@ -575,8 +705,6 @@ class _HomeData {
 
   _HomeData({
     required this.products,
-    required this.categories,
-    required this.inclusion,
     required this.favoriteIds,
     required this.banners,
     required this.discounted,
@@ -589,10 +717,100 @@ class _HomeData {
 /// Cloche des notifications, avec une pastille rouge quand il y a des
 /// non-lues (6 septembre 2026). Le compteur est tenu par
 /// [NotificationsController], relu toutes les 30 secondes.
+/// En-tête blanc de l'accueil — 22 septembre 2026, d'après la capture
+/// envoyée par Emina.
+///
+/// **Ce qu'il remplace.** Jusqu'ici le bandeau (cœur, cloche, loupe, plus
+/// le fil d'Ariane « New in ») était SUPERPOSÉ en blanc sur la photo, qui
+/// remontait jusque sous la barre de statut. La capture montre autre
+/// chose : une barre blanche franche, le monogramme « b » à gauche, trois
+/// icônes sombres à droite, et la photo qui commence SOUS cette barre.
+///
+/// **Conséquences, toutes visibles à l'écran :**
+///  * les icônes de la barre de statut repassent en sombre
+///    ([SystemUiOverlayStyle.dark]) — sur fond blanc, du blanc serait
+///    invisible ;
+///  * le `SafeArea` du haut est rétabli : plus rien ne doit passer sous
+///    l'encoche ;
+///  * le voile dégradé en haut de [_PromoBanner] n'a plus de raison
+///    d'être — il n'existait que pour garder du texte blanc lisible sur
+///    une photo claire.
+///
+/// **Le monogramme.** `logo_b.png` n'est PAS encore dans le dépôt : les
+/// quatre images présentes (`logo.png`, `logo_mark.png`, les deux
+/// `splash_*`) sont toutes le chariot + le mot, aucune n'est le « b »
+/// seul de la capture. Tant que le fichier manque, `errorBuilder` retombe
+/// sur le logo complet : l'accueil reste utilisable et ne lève pas
+/// d'exception. Déposer le « b » en noir sur fond TRANSPARENT à
+/// `assets/images/logo_b.png` suffit à le faire apparaître, sans toucher
+/// au code.
+class _HomeTopBar extends StatelessWidget {
+  final VoidCallback onSearchTap;
+  final VoidCallback onNotificationsTap;
+  final VoidCallback onFavoritesTap;
+
+  const _HomeTopBar({
+    required this.onSearchTap,
+    required this.onNotificationsTap,
+    required this.onFavoritesTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Décodage à la taille affichée — même budget serré qu'ailleurs (voir
+    // la note de `main.dart` sur les photos noires de Safari iPhone).
+    final decodeWidth = (34 * 2 * MediaQuery.devicePixelRatioOf(context).clamp(1.0, 3.0)).round();
+
+    return ColoredBox(
+      color: AppTheme.bg,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 6, 6, 6),
+        child: Row(
+          children: [
+            Image.asset(
+              'assets/images/logo_b.png',
+              height: 34,
+              cacheWidth: decodeWidth,
+              semanticLabel: 'Boutigui',
+              // Repli tant que le monogramme n'est pas fourni — voir la
+              // doc de la classe.
+              errorBuilder: (context, _, __) => Image.asset(
+                'assets/images/logo.png',
+                height: 30,
+                cacheWidth: decodeWidth,
+                semanticLabel: 'Boutigui',
+              ),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: const Icon(Icons.search, color: AppTheme.ink, size: 24),
+              onPressed: onSearchTap,
+            ),
+            _NotificationBell(onTap: onNotificationsTap, color: AppTheme.ink),
+            IconButton(
+              // Un CŒUR, pas un marque-page : c'est ce que montre la
+              // capture, et c'est aussi ce que l'écran d'arrivée appelle
+              // « Favoris ».
+              icon: const Icon(Icons.favorite_border, color: AppTheme.ink, size: 24),
+              onPressed: onFavoritesTap,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _NotificationBell extends StatelessWidget {
   final VoidCallback onTap;
 
-  const _NotificationBell({required this.onTap});
+  /// Couleur de la cloche. Blanche du temps où le bandeau était superposé
+  /// à la photo ; depuis l'en-tête blanc du 22 septembre 2026, c'est
+  /// [AppTheme.ink] qui est passé — d'où le paramètre plutôt qu'une
+  /// constante en dur.
+  final Color color;
+
+  const _NotificationBell({required this.onTap, this.color = Colors.white});
 
   @override
   Widget build(BuildContext context) {
@@ -601,10 +819,7 @@ class _NotificationBell extends StatelessWidget {
       alignment: Alignment.center,
       children: [
         IconButton(
-          // Encre et non blanc depuis le 21 septembre 2026 : cette cloche
-          // était posée sur la photo de la bannière ; elle vit maintenant
-          // dans l'en-tête blanc.
-          icon: const Icon(Icons.notifications_none, color: AppTheme.ink, size: 23),
+          icon: Icon(Icons.notifications_none, color: color, size: 23),
           onPressed: onTap,
         ),
         if (unread > 0)
@@ -626,571 +841,6 @@ class _NotificationBell extends StatelessWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-// =====================================================================
-// Accueil refait le 20 septembre 2026, d'après la maquette fournie.
-//
-// Ce qui change par rapport à la version précédente :
-//
-//  - Un vrai EN-TÊTE blanc au-dessus du contenu, au lieu d'un bandeau
-//    blanc superposé à la photo. Le texte blanc sur une photo choisie par
-//    la vendeuse depuis l'admin n'était lisible que par chance ; sur une
-//    bannière claire il disparaissait. L'en-tête réglé ce problème pour
-//    de bon, et permet d'afficher la recherche en clair plutôt que
-//    derrière une loupe.
-//  - Une bannière EN CARTE, encadrée et arrondie, au format 16:9 — donc
-//    beaucoup plus courte. La première rangée de produits passe au-dessus
-//    de la ligne de flottaison, ce qui est l'intérêt d'une place de
-//    marché.
-//  - Une grille de catégories, deux cartes promotionnelles et un bandeau
-//    de réassurance, tous repris de la maquette.
-// =====================================================================
-
-/// En-tête : mot-symbole, recherche, notifications / favoris / panier.
-///
-/// Sur la maquette (large), le logo et la recherche tiennent sur une seule
-/// ligne. Sur un téléphone de 393 points, les faire cohabiter écrase la
-/// recherche à une largeur inutilisable : on empile donc en deux rangées.
-class _HomeHeader extends StatelessWidget {
-  /// Appelée avec le texte saisi, à la validation au clavier.
-  final ValueChanged<String> onSearch;
-  final VoidCallback onFavoritesTap;
-  final VoidCallback onNotificationsTap;
-  final VoidCallback onCartTap;
-
-  const _HomeHeader({
-    required this.onSearch,
-    required this.onFavoritesTap,
-    required this.onNotificationsTap,
-    required this.onCartTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final cartCount = context.watch<CartController>().itemCount;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.eco, size: 22, color: AppTheme.green),
-                        const SizedBox(width: 6),
-                        Text('Boutigui', style: AppTheme.brand(size: 21, color: AppTheme.ink)),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    // La baseline de la maquette. En français, et sans
-                    // promesse que le produit ne tient pas.
-                    Text(
-                      'COMMERCE · PAIEMENT · CROISSANCE',
-                      style: AppTheme.brand(size: 8, color: AppTheme.muted),
-                    ),
-                  ],
-                ),
-              ),
-              // La cloche porte la pastille des notifications non lues —
-              // une icône nue la perdait (21 septembre 2026).
-              _NotificationBell(onTap: onNotificationsTap),
-              _HeaderIcon(
-                icon: Icons.favorite_border,
-                onTap: onFavoritesTap,
-              ),
-              _HeaderIcon(
-                icon: Icons.shopping_bag_outlined,
-                onTap: onCartTap,
-                badge: cartCount > 0 ? '$cartCount' : null,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          // VRAI champ de saisie — corrigé le 21 septembre 2026.
-          //
-          // C'était un `InkWell` qui RESSEMBLAIT à un champ et ouvrait une
-          // feuille contenant un second champ : on touchait une barre de
-          // recherche pour en obtenir une autre, sans pouvoir écrire dans
-          // la première. Une barre de recherche doit accepter la frappe là
-          // où on la touche.
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: TextField(
-              textInputAction: TextInputAction.search,
-              onSubmitted: onSearch,
-              style: const TextStyle(fontSize: 13, color: AppTheme.ink),
-              decoration: InputDecoration(
-                isDense: true,
-                filled: true,
-                fillColor: AppTheme.searchFill,
-                hintText: 'Rechercher un produit, une boutique…',
-                hintStyle: const TextStyle(fontSize: 13, color: AppTheme.searchPlaceholder),
-                prefixIcon: const Icon(Icons.search, size: 19, color: AppTheme.searchPlaceholder),
-                prefixIconConstraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-                  borderSide: const BorderSide(color: AppTheme.green, width: 1.4),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeaderIcon extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final String? badge;
-  const _HeaderIcon({required this.icon, required this.onTap, this.badge});
-
-  @override
-  Widget build(BuildContext context) {
-    return IconButton(
-      onPressed: onTap,
-      icon: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Icon(icon, size: 23, color: AppTheme.ink),
-          if (badge != null)
-            Positioned(
-              right: -5,
-              top: -4,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                constraints: const BoxConstraints(minWidth: 15),
-                decoration: BoxDecoration(
-                  color: AppTheme.green,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  badge!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                      fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Bannière en carte, format 16:9, avec ses points de pagination.
-///
-/// Le format est FIXE et non plus une fraction de la hauteur d'écran : une
-/// bannière qui contient du texte doit être cadrée pareil sur tous les
-/// appareils.
-///
-/// **4:3 et pas 16:9**, bien que la maquette montre une bande plus large.
-/// Les bannières sont envoyées depuis le site admin par des gens qui
-/// cadrent ce qu'ils veulent, souvent au carré. Dans une boîte 16:9, une
-/// image carrée perd 44 % de sa hauteur — sur `home_banner.jpg`, le titre
-/// disparaissait entièrement. En 4:3 elle n'en perd que 25 %, et une
-/// bannière mal cadrée reste présentable. Un format large n'est le bon
-/// choix que si l'on maîtrise chaque image, ce qui n'est pas le cas ici.
-///
-/// Format idéal à fournir : 4:3, par exemple 1440 × 1080.
-class _HeroCard extends StatefulWidget {
-  final List<String> imageUrls;
-  final VoidCallback onTap;
-  const _HeroCard({required this.imageUrls, required this.onTap});
-
-  @override
-  State<_HeroCard> createState() => _HeroCardState();
-}
-
-class _HeroCardState extends State<_HeroCard> {
-  final PageController _controller = PageController();
-  int _page = 0;
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final urls = widget.imageUrls;
-    final hasMultiple = urls.length >= 2;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GestureDetector(
-        onTap: widget.onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-          child: AspectRatio(
-            aspectRatio: 4 / 3,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                ColoredBox(
-                  color: AppTheme.sage,
-                  child: urls.isEmpty
-                      ? Image.asset('assets/images/home_banner.jpg', fit: BoxFit.cover)
-                      : PageView.builder(
-                          controller: _controller,
-                          itemCount: urls.length,
-                          onPageChanged: (i) => setState(() => _page = i),
-                          itemBuilder: (context, i) =>
-                              AppImage(url: urls[i], fit: BoxFit.cover),
-                        ),
-                ),
-                if (hasMultiple)
-                  Positioned(
-                    bottom: 10,
-                    left: 0,
-                    right: 0,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        for (var i = 0; i < urls.length; i++)
-                          Container(
-                            width: i == _page ? 16 : 6,
-                            height: 6,
-                            margin: const EdgeInsets.symmetric(horizontal: 3),
-                            decoration: BoxDecoration(
-                              color: i == _page ? Colors.white : Colors.white70,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Grille « Explorer par catégorie ».
-///
-/// Le nombre de colonnes suit la largeur disponible au lieu d'être figé :
-/// trois sur un téléphone étroit, jusqu'à six sur une tablette. Chaque
-/// cellule est une carte — photo en haut, libellé en bas — comme sur la
-/// maquette.
-class _CategoryGrid extends StatelessWidget {
-  final List<Category> categories;
-  final void Function(Category) onTap;
-  final VoidCallback onSeeAll;
-
-  const _CategoryGrid({
-    required this.categories,
-    required this.onTap,
-    required this.onSeeAll,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (categories.isEmpty) return const SizedBox.shrink();
-    return LayoutBuilder(builder: (context, c) {
-      final columns = (c.maxWidth / 118).floor().clamp(3, 6);
-      // Deux rangées pleines, puis une case « Plus » pour le reste.
-      final slots = columns * 2;
-      final shown = categories.take(slots - 1).toList();
-      const spacing = 10.0;
-      final width = (c.maxWidth - 32 - (columns - 1) * spacing) / columns;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionHeader(
-            title: 'Explorer par catégorie',
-            onSeeAll: onSeeAll,
-            seeAllLabel: 'Tout voir',
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Wrap(
-              spacing: spacing,
-              runSpacing: spacing,
-              children: [
-                for (final cat in shown)
-                  SizedBox(
-                    width: width,
-                    child: CategoryCard(category: cat, onTap: () => onTap(cat)),
-                  ),
-                SizedBox(
-                  width: width,
-                  child: CategoryCard(category: null, onTap: onSeeAll),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    });
-  }
-}
-
-
-/// Bandeau de réassurance, en bas de l'accueil.
-///
-/// La maquette proposait « Secure Payment — 100% Safe ». Deux raisons de ne
-/// pas l'écrire :
-///
-///  1. Le roadmap l'interdit explicitement (§27, « Do not claim 100%
-///     secure ») — et un jury fintech relève ce genre de promesse.
-///  2. Ce serait faux. Boutigui ne traite aucun paiement : l'argent va
-///     directement de la cliente à la vendeuse par son application
-///     bancaire. On ne peut pas garantir la sécurité d'une transaction
-///     qu'on ne touche pas.
-///
-/// Les quatre arguments ci-dessous disent donc ce que le produit fait
-/// vraiment — ce qui se trouve être une meilleure histoire.
-class _TrustBar extends StatelessWidget {
-  const _TrustBar();
-
-  static const _items = [
-    (Icons.account_balance_outlined, 'Paiement direct', 'Bankily · Masrvi · Sedad'),
-    (Icons.receipt_long_outlined, 'Référence unique', 'Chaque paiement tracé'),
-    (Icons.local_shipping_outlined, 'Livraison', 'Organisée par la boutique'),
-    (Icons.storefront_outlined, 'Boutiques locales', 'Entrepreneurs mauritaniens'),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppTheme.greenTint,
-        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-      ),
-      child: LayoutBuilder(builder: (context, c) {
-        // Quatre de front dès qu'il y a la place, deux par deux sinon.
-        final columns = c.maxWidth < 380 ? 2 : 4;
-        final width = (c.maxWidth - (columns - 1) * 8) / columns;
-        return Wrap(
-          spacing: 8,
-          runSpacing: 14,
-          children: [
-            for (final item in _items)
-              SizedBox(
-                width: width,
-                child: Column(
-                  children: [
-                    Icon(item.$1, size: 20, color: AppTheme.green),
-                    const SizedBox(height: 6),
-                    Text(item.$2,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.ink)),
-                    const SizedBox(height: 2),
-                    Text(item.$3,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                            fontSize: 10, height: 1.25, color: AppTheme.ink2)),
-                  ],
-                ),
-              ),
-          ],
-        );
-      }),
-    );
-  }
-}
-
-/// Grille de produits de l'accueil — 20 septembre 2026.
-///
-/// Remplace [_ProductShowcaseRow], qui faisait défiler les produits
-/// HORIZONTALEMENT. Trois raisons de passer à une grille qui descend :
-///
-///  - Une rangée horizontale ne montrait que deux produits et demi. Le
-///    reste n'existait que pour qui devine qu'on peut pousser de côté —
-///    et sur le web, où il n'y a pas de geste tactile, quasiment personne
-///    ne le devine.
-///  - Deux directions de défilement sur le même écran (la page descend,
-///    la rangée va de côté) se gênent : on part de travers en voulant
-///    descendre.
-///  - La grille est déjà la façon dont les produits sont présentés dans
-///    « Tous les produits » (`all_products_screen.dart`). Deux écrans qui
-///    montrent la même chose devaient la montrer pareil.
-///
-/// Le calibrage est donc repris tel quel de cet écran : deux colonnes,
-/// 2 px de filet, bord à bord, format calculé par [productGridAspectRatio].
-class _ProductShowcaseGrid extends StatelessWidget {
-  final List<Product> products;
-  final Set<String> favoriteIds;
-  final ValueChanged<Product> onToggleFavorite;
-  final String seeAllLabel;
-  final VoidCallback onSeeAll;
-
-  const _ProductShowcaseGrid({
-    required this.products,
-    required this.favoriteIds,
-    required this.onToggleFavorite,
-    required this.seeAllLabel,
-    required this.onSeeAll,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Une page d'accueil n'est pas un catalogue : on en montre une
-    // poignée, « Tout voir » fait le reste. 12 = six rangées de deux.
-    final shown = products.take(12).toList();
-    final width = MediaQuery.sizeOf(context).width;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(
-          title: 'Produits',
-          onSeeAll: onSeeAll,
-          seeAllLabel: seeAllLabel,
-        ),
-        const SizedBox(height: 4),
-        GridView.builder(
-          // La page défile déjà : cette grille ne doit pas défiler pour son
-          // propre compte, elle prend juste la hauteur qu'il lui faut.
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 2,
-            crossAxisSpacing: 2,
-            childAspectRatio: productGridAspectRatio((width - 2) / 2),
-          ),
-          itemCount: shown.length,
-          itemBuilder: (context, i) {
-            final product = shown[i];
-            return ProductCard(
-              key: ValueKey(product.id),
-              product: product,
-              isFavorite: favoriteIds.contains(product.id),
-              onToggleFavorite: () => onToggleFavorite(product),
-              onTap: () => Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => ProductScreen(productId: product.id)),
-              ),
-            );
-          },
-        ),
-        if (products.length > shown.length)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-            child: OutlinedButton(
-              onPressed: onSeeAll,
-              child: Text(seeAllLabel),
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-/// Panneau d'impact (20 septembre 2026).
-///
-/// Boutigui est ouvert à tous les entrepreneurs mauritaniens ; les femmes en
-/// sont le public principal. Ce panneau mesure cette réalité au lieu de
-/// l'affirmer.
-///
-/// Deux précautions :
-///
-///  * la part de boutiques dirigées par des femmes est calculée sur les
-///    boutiques qui ont RÉPONDU, pas sur le total — sinon celles qui
-///    n'ont rien déclaré seraient comptées comme « non », ce qui est faux
-///    et minore le chiffre ;
-///  * elle n'est affichée qu'à partir de trois déclarations. En dessous,
-///    un pourcentage sur un ou deux cas ne veut rien dire et se lirait
-///    comme une statistique.
-class _ImpactPanel extends StatelessWidget {
-  final Map<String, int> stats;
-  const _ImpactPanel({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final t = context.watch<SettingsController>().t;
-    final total = stats['total'] ?? 0;
-    final women = stats['women'] ?? 0;
-    final declared = stats['declared'] ?? 0;
-    final cities = stats['cities'] ?? 0;
-    if (total == 0) return const SizedBox.shrink();
-
-    final showShare = declared >= 3;
-    final share = showShare ? (women / declared * 100).round() : 0;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppTheme.card,
-        borderRadius: BorderRadius.circular(AppTheme.radiusCard),
-        border: Border.all(color: AppTheme.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(t('impact_title').toUpperCase(),
-              style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: AppTheme.ink)),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              _Stat(value: '$total', label: t('impact_shops')),
-              if (showShare) _Stat(value: '$share %', label: t('impact_women_led')),
-              _Stat(value: '$cities', label: t('impact_cities')),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat extends StatelessWidget {
-  final String value;
-  final String label;
-  const _Stat({required this.value, required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.centerLeft,
-            child: Text(value,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.w700, color: AppTheme.green)),
-          ),
-          const SizedBox(height: 2),
-          Text(label,
-              style: const TextStyle(fontSize: 11, height: 1.2, color: AppTheme.ink2)),
-        ],
-      ),
     );
   }
 }

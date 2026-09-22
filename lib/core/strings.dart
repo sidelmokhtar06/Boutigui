@@ -103,6 +103,11 @@ class Strings {
     'all_products': {'fr': 'Tous les produits', 'ar': 'كل المنتجات', 'en': 'All products'},
     'new_products': {'fr': 'Nouveautés', 'ar': 'وصل حديثا', 'en': 'New arrivals'},
     'see_all': {'fr': 'Tout voir', 'ar': 'عرض الكل', 'en': 'See all'},
+    // Titres des sections de l'accueil (22 septembre 2026). « Discounts »
+    // était écrit en dur, en anglais, dans home_screen.dart — donc affiché
+    // tel quel y compris en français et en arabe.
+    'section_new': {'fr': 'Nouveautés', 'ar': 'وصل حديثاً', 'en': 'New in'},
+    'section_discounts': {'fr': 'Réductions', 'ar': 'تخفيضات', 'en': 'Discounts'},
     'filter': {'fr': 'Filtrer', 'ar': 'تصفية', 'en': 'Filter'},
     // Bouton "Catégorie" de l'écran "Tous les produits", ajouté le 4
     // septembre 2026 (nuit) : depuis que la grille de catégories a été

@@ -86,7 +86,16 @@ begin
            'Pièce confectionnée à Nouakchott.',
            (array[4500,7800,2900,12500,6200,15800,9400,3600,
                   5100,18900,4200,2700,5600,8300,6900])[v_i],
-           10 + floor(random() * 40)::int,
+           -- Stock de DÉPART volontairement large (21 septembre 2026).
+           -- Depuis `correctifs_patch.sql`, chaque ligne de commande
+           -- décrémente réellement `products.stock` : avec les 10 à 49
+           -- unités d'avant, les ~450 unités vendues par les 90 jours
+           -- d'historique ci-dessous épuisaient plusieurs produits et le
+           -- script échouait tout entier sur « STOCK_INSUFFISANT ».
+           -- Ce nombre n'est pas ce que la démo affichera : le stock est
+           -- remis à une valeur réaliste tout à la fin du fichier, une
+           -- fois l'historique écoulé.
+           400,
            true,
            now() - interval '90 days' + (v_i || ' days')::interval)
       returning id into v_product;
@@ -203,6 +212,18 @@ begin
       end;
     end loop;
   end loop;
+
+  -- Stock d'aujourd'hui (21 septembre 2026).
+  --
+  -- Les 90 jours de commandes ci-dessus ont réellement consommé du stock,
+  -- puisque la base le décrémente maintenant. Ce qui compte pour la démo
+  -- n'est pas ce qu'il restait du stock de départ artificiel, mais ce que
+  -- la vendeuse a en rayon MAINTENANT : on le repose donc à une valeur
+  -- crédible, comme un réassort. C'est aussi ce qui permet de montrer la
+  -- limitation de quantité côté panier sans tomber sur un « 380 en stock ».
+  update public.products
+     set stock = 10 + floor(random() * 40)::int
+   where shop_id = v_shop;
 
   raise notice 'Démo prête : boutique « Maison Aïcha », 15 produits, 15 clientes, % commandes sur 90 jours.', v_order_count;
 end $$;

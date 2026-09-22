@@ -36,8 +36,13 @@ class DeliveryService {
 
   /// Inscription livreur — ne demande qu'un type de véhicule (facultatif),
   /// exactement comme créer une boutique ne demande que le minimum.
+  ///
+  /// Le statut n'est PAS envoyé : la base le force à 'pending'
+  /// (`force_driver_pending_on_insert`, `correctifs_patch.sql` partie 1).
+  /// Un compte ne décide pas lui-même qu'il est approuvé.
   Future<DriverProfile> becomeDriver({String? vehicleType}) async {
-    final userId = _client.auth.currentUser!.id;
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
     final row = await _client
         .from('driver_profiles')
         .insert({'id': userId, 'vehicle_type': vehicleType, 'is_available': true})
@@ -47,7 +52,8 @@ class DeliveryService {
   }
 
   Future<void> setAvailability(bool available) async {
-    final userId = _client.auth.currentUser!.id;
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
     await _client.from('driver_profiles').update({'is_available': available}).eq('id', userId);
   }
 
@@ -71,6 +77,17 @@ class DeliveryService {
   /// `select()` unique, pour qu'une nouvelle demande de livraison apparaisse
   /// dès sa création, tant que l'écran de la livreuse reste ouvert (voir la
   /// limite honnête sur les notifications, en tête de `livreur_patch.sql`).
+  ///
+  /// **21 septembre 2026 (audit) :** la base ne laisse plus passer ici que
+  /// les courses dont la commande a été CONFIRMÉE par la vendeuse
+  /// (`delivery_requests.ready`, voir `correctifs_patch.sql` partie 8).
+  /// Avant, le tableau se remplissait dès la validation du panier, donc de
+  /// courses qu'aucune livreuse ne pouvait honorer — la vendeuse n'avait
+  /// même pas encore vu la commande. Le drapeau vit sur la course
+  /// elle-même et non sur `orders` pour deux raisons : une livreuse n'a
+  /// aucun droit de lecture sur `orders`, et Realtime n'émet un événement
+  /// que si la ligne SUIVIE change — la confirmation de la vendeuse fait
+  /// donc apparaître la course en direct, sans rechargement.
   Stream<List<DeliveryRequest>> streamOpenBoard() {
     return _client
         .from('delivery_requests')

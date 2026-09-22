@@ -190,27 +190,26 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  /// Décoration des champs — 22 septembre 2026, alignée sur le reste de
+  /// l'application.
+  ///
+  /// Cette méthode REDÉFINISSAIT tout : remplissage, bordures, rayon 12 et
+  /// surtout une bordure de focus VERTE. Or `inputDecorationTheme`
+  /// (theme.dart) pose déjà exactement les mêmes champs pour toute
+  /// l'application — rayon 15, bordure `line`, et focus `ink`. Les deux
+  /// séries de valeurs divergeaient : un champ de cet écran ne ressemblait
+  /// donc à aucun autre champ de l'appli, et le vert au focus n'existe
+  /// nulle part ailleurs (le vert sert d'accent, jamais de couleur
+  /// d'interface).
+  ///
+  /// On ne garde donc ici que ce qui est PROPRE à ce formulaire — libellé,
+  /// texte d'aide, icône de fin. Le reste vient du thème, et suivra
+  /// automatiquement s'il change.
   InputDecoration _boxed(String label, {String? helper, Widget? suffix}) {
     return InputDecoration(
       labelText: label,
       helperText: helper,
       suffixIcon: suffix,
-      isDense: true,
-      filled: true,
-      fillColor: AppTheme.panel,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-        borderSide: const BorderSide(color: AppTheme.line),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-        borderSide: const BorderSide(color: AppTheme.line),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(AppTheme.radiusSmall),
-        borderSide: const BorderSide(color: AppTheme.green, width: 1.6),
-      ),
     );
   }
 
@@ -327,22 +326,26 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
               SizedBox(
                 height: 52,
+                // Aucun `styleFrom` : le `filledButtonTheme` donne déjà le
+                // fond `ink`, le texte blanc et le rayon 16 de tous les
+                // boutons pleins de l'application. Il portait ici un vert
+                // (`greenDeep`) et un rayon « pilule » qu'on ne trouve sur
+                // aucun autre bouton — le vert est un accent, pas la
+                // couleur des actions principales.
+                //
+                // Majuscules + `letterSpacing: 0.6` : c'est la forme des
+                // appels à l'action de l'appli (voir « ADD TO BAG » et
+                // « GO TO BAG », product_screen.dart).
                 child: FilledButton(
                   onPressed: busy ? null : _submitEmail,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppTheme.greenDeep,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-                    ),
-                  ),
                   child: _emailLoading
                       ? const SizedBox(
                           height: 18,
                           width: 18,
                           child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                       : Text(
-                          _signUpMode ? t('tab_sign_up') : t('tab_sign_in'),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
+                          (_signUpMode ? t('tab_sign_up') : t('tab_sign_in')).toUpperCase(),
+                          style: const TextStyle(letterSpacing: 0.6),
                         ),
                 ),
               ),
@@ -363,15 +366,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
               SizedBox(
                 height: 52,
+                // Idem : `outlinedButtonTheme` fournit le contour et le
+                // rayon 16 communs. Seule la pilule était propre à cet
+                // écran.
                 child: OutlinedButton.icon(
                   onPressed: busy ? null : _continueWithGoogle,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppTheme.ink,
-                    side: const BorderSide(color: AppTheme.line),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(AppTheme.radiusPill),
-                    ),
-                  ),
                   icon: _googleLoading
                       ? const SizedBox(
                           height: 16,
@@ -413,7 +412,9 @@ class _ModeToggle extends StatelessWidget {
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: AppTheme.panel,
-        borderRadius: BorderRadius.circular(AppTheme.radiusPill),
+        // Rayon 16, comme les boutons — et non la « pilule » de 20, qui
+        // n'apparaît nulle part ailleurs dans l'application.
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
@@ -431,8 +432,13 @@ class _ModeToggle extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 11),
           decoration: BoxDecoration(
-            color: active ? AppTheme.card : Colors.transparent,
-            borderRadius: BorderRadius.circular(AppTheme.radiusPill),
+            // Segment actif en `ink` sur texte blanc : c'est ce que pose
+            // `segmentedButtonTheme` (theme.dart) pour toute
+            // l'application. Le segment actif était auparavant une simple
+            // carte blanche sur fond gris clair — lisible, mais sans
+            // rapport avec les autres sélecteurs de l'appli.
+            color: active ? AppTheme.ink : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             label,
@@ -442,7 +448,7 @@ class _ModeToggle extends StatelessWidget {
               // Le segment actif se distingue par le fond ET par la
               // graisse — jamais par la seule couleur.
               fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-              color: active ? AppTheme.ink : AppTheme.ink2,
+              color: active ? Colors.white : AppTheme.ink2,
             ),
           ),
         ),

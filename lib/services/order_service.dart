@@ -4,6 +4,35 @@ import '../models/models.dart';
 import 'cart_controller.dart';
 import 'storage_service.dart';
 
+/// Résultat d'une validation de panier — voir [OrderService.checkout].
+///
+/// **Ajouté le 21 septembre 2026 (audit).** Le panier peut contenir
+/// plusieurs boutiques, donc plusieurs PAIEMENTS distincts, déjà effectués
+/// dans l'application bancaire avant d'arriver ici. Une seule d'entre elles
+/// peut échouer (référence déjà utilisée, article épuisé entre-temps). Le
+/// code d'avant renvoyait une simple liste d'identifiants et laissait
+/// l'exception remonter à la première erreur : les commandes déjà créées
+/// existaient bel et bien, mais l'écran affichait un échec sec et la
+/// cliente pensait que rien n'était parti. Ce type dit exactement ce qui a
+/// abouti et ce qui n'a pas abouti.
+class CheckoutOutcome {
+  /// Identifiants des commandes réellement créées.
+  final List<String> createdOrderIds;
+
+  /// Boutiques dont la commande a échoué : nom de la boutique -> raison
+  /// déjà lisible par une humaine.
+  final Map<String, String> failedByShop;
+
+  const CheckoutOutcome({required this.createdOrderIds, required this.failedByShop});
+
+  bool get hasFailures => failedByShop.isNotEmpty;
+  bool get hasSuccesses => createdOrderIds.isNotEmpty;
+
+  /// Rien n'est passé du tout — l'écran affiche une erreur simple, le
+  /// panier est intact.
+  bool get isTotalFailure => createdOrderIds.isEmpty;
+}
+
 /// Création des commandes et suivi côté client.
 ///
 /// Une commande = une boutique : un panier avec des produits de plusieurs
@@ -46,7 +75,25 @@ class OrderService {
   ///
   /// [phone] est aussi enregistré sur le profil, pour ne plus avoir à le
   /// redemander la prochaine fois.
-  Future<List<String>> checkout(
+  ///
+  /// **Refait le 21 septembre 2026 (audit) — une transaction par
+  /// boutique.** Cette méthode enchaînait trois appels HTTP par boutique :
+  /// `insert into orders`, puis `insert into delivery_requests`, puis
+  /// `insert into order_items`. Trois transactions distinctes. Si la
+  /// dernière échouait — un article épuisé depuis `correctifs_patch.sql`,
+  /// une coupure réseau — la commande restait en base SANS SES LIGNES,
+  /// donc avec un total recalculé à zéro, et la vendeuse voyait une
+  /// commande vide qu'elle ne pouvait pas honorer.
+  ///
+  /// Tout passe maintenant par la fonction `create_order`
+  /// (`supabase/correctifs_patch.sql`, partie 7), qui fait les trois
+  /// insertions dans UNE transaction : ou bien la commande complète
+  /// existe, ou bien rien n'existe.
+  ///
+  /// Et comme chaque boutique correspond à un paiement déjà effectué et
+  /// distinct, l'échec de l'une n'annule plus les autres : on continue la
+  /// boucle et on renvoie le détail dans [CheckoutOutcome].
+  Future<CheckoutOutcome> checkout(
     CartController cart, {
     required String phone,
     required Map<String, String> paymentReferencesByShop,
@@ -75,123 +122,109 @@ class OrderService {
 
     final profileRow = await _client.from('profiles').select().eq('id', user.id).single();
 
-    // Service de paiement de chaque boutique, recopié sur la commande
-    // (20 septembre 2026) — comme le nom et le téléphone de la cliente :
-    // la vendeuse peut changer de banque plus tard, la commande doit
-    // garder le service par lequel elle a réellement été payée. C'est
-    // aussi ce qui permet la répartition par fournisseur du tableau de
-    // bord sans jointure sur `shops`.
-    //
+    // Nom de chaque boutique — sert uniquement aux messages d'erreur : une
+    // cliente doit lire « Chez Fatima » et non un identifiant technique.
     // Une seule requête pour tout le panier, pas une par boutique.
-    final shopIds = cart.linesByShop.keys.toList();
-    final providerByShop = <String, String?>{};
+    final shopNames = <String, String>{};
     try {
-      final rows = await _client
-          .from('shops')
-          .select('id, merchant_provider')
-          .inFilter('id', shopIds);
+      final rows = await _client.from('shops').select('id, name').inFilter('id', cart.linesByShop.keys.toList());
       for (final row in rows) {
-        providerByShop[row['id'] as String] = row['merchant_provider'] as String?;
+        shopNames[row['id'] as String] = (row['name'] as String?) ?? '';
       }
     } catch (_) {
-      // Le fournisseur est une information de confort pour les
-      // statistiques : s'il manque, la commande doit quand même partir.
-      // Le paiement lui-même ne dépend pas de cette colonne.
+      // Sans les noms, les messages parleront de « cette boutique ». La
+      // commande elle-même n'en dépend pas.
     }
 
     final createdOrderIds = <String>[];
+    final failedByShop = <String, String>{};
 
-    for (final entry in cart.linesByShop.entries) {
+    // `linesByShop` reconstruit une map à chaque lecture : on en prend une
+    // copie avant la boucle, puisque `clearShop` modifie le panier au fur
+    // et à mesure.
+    final byShop = cart.linesByShop;
+
+    for (final entry in byShop.entries) {
       final shopId = entry.key;
       final lines = entry.value;
-      // Depuis `supabase/fintech_patch.sql` (20 septembre 2026), ce total
-      // est INDICATIF : la base le remet à zéro à l'insertion puis le
-      // recalcule à partir des lignes, dont elle retarife elle-même
-      // chaque prix unitaire depuis `products`. Un client modifié ne peut
-      // donc plus commander à 1 MRU. On continue de l'envoyer pour que
-      // l'app reste compatible avec une base où le patch n'a pas encore
-      // été joué.
-      final total = lines.fold<double>(0, (sum, l) => sum + l.subtotal);
+      final shopLabel = (shopNames[shopId] ?? '').isEmpty ? 'cette boutique' : shopNames[shopId]!;
 
-      final orderRow = await _client
-          .from('orders')
-          .insert({
-            'client_id': user.id,
-            'shop_id': shopId,
-            'total': total,
-            'client_full_name': profileRow['full_name'] ?? '',
-            'client_phone': cleanPhone,
-            'client_city': profileRow['city'],
-            // L'adresse écrite de la commande prime sur celle du profil :
-            // c'est celle de CETTE livraison.
-            'client_address': cleanAddress.isEmpty ? profileRow['address'] : cleanAddress,
-            'payment_reference': paymentReferencesByShop[shopId]!.trim(),
-            'payment_provider': providerByShop[shopId],
-            'delivery_lat': deliveryLat,
-            'delivery_lng': deliveryLng,
-            'delivery_mode': deliveryMode,
-          })
-          .select()
-          .single();
-
-      final orderId = orderRow['id'] as String;
-
-      // Espace Livreur (15 septembre 2026) : une course n'est proposée aux
-      // livreuses que si la cliente a choisi "Delivery" (pas "I'll pick it
-      // up") ET a partagé une position — sans ça, il n'y a pas de point
-      // d'arrivée à donner. Le point de départ (la boutique) peut manquer
-      // si la vendeuse n'a pas encore renseigné sa position dans "Ma
-      // boutique" ; la course reste alors visible aux livreuses, simplement
-      // sans distance calculée tant que la boutique ne l'a pas renseignée.
-      if (deliveryMode == 'delivery' && deliveryLat != null && deliveryLng != null) {
-        try {
-          final shopRow = await _client.from('shops').select('lat, lng').eq('id', shopId).maybeSingle();
-          await _client.from('delivery_requests').insert({
-            'order_id': orderId,
-            'shop_id': shopId,
-            'pickup_lat': shopRow?['lat'],
-            'pickup_lng': shopRow?['lng'],
-            'dropoff_lat': deliveryLat,
-            'dropoff_lng': deliveryLng,
-          });
-        } catch (e) {
-          // La commande elle-même est déjà créée et payée : une course non
-          // créée (ex. patch SQL pas encore exécuté par Emina) ne doit pas
-          // faire échouer tout le paiement. La boutique garde de toute
-          // façon la position de livraison sur la commande elle-même
-          // (`orders.delivery_lat/lng`) et peut organiser la livraison sur
-          // WhatsApp comme avant.
-          // ignore: avoid_print
-          print('Delivery request not created: $e');
-        }
-      }
-
-      final items = lines
-          .map((l) => {
-                'order_id': orderId,
+      try {
+        // Ni le prix unitaire ni le total ne sont envoyés : depuis
+        // `fintech_patch.sql` la base retarife chaque ligne depuis
+        // `products` et recalcule le total. Les envoyer quand même ne
+        // servait qu'à entretenir l'illusion qu'ils comptaient.
+        final orderId = await _client.rpc('create_order', params: {
+          'p_shop_id': shopId,
+          'p_payment_reference': paymentReferencesByShop[shopId]!.trim(),
+          'p_client_full_name': profileRow['full_name'] ?? '',
+          'p_client_phone': cleanPhone,
+          'p_client_city': profileRow['city'],
+          // L'adresse écrite de la commande prime sur celle du profil :
+          // c'est celle de CETTE livraison.
+          'p_client_address': cleanAddress.isEmpty ? profileRow['address'] : cleanAddress,
+          'p_delivery_lat': deliveryLat,
+          'p_delivery_lng': deliveryLng,
+          'p_delivery_mode': deliveryMode,
+          'p_items': [
+            for (final l in lines)
+              {
                 'product_id': l.product.id,
                 // Option choisie (taille, couleur, ...) ajoutée au nom
-                // enregistré (5 septembre 2026) : `order_items` garde un nom
-                // recopié au moment de l'achat plutôt qu'une colonne dédiée,
-                // pas besoin de migration pour que la vendeuse voie le choix
-                // de la cliente dans le détail de la commande.
-                'product_name': l.selectedOption == null ? l.product.name : '${l.product.name} — ${l.selectedOption}',
-                'unit_price': l.product.price,
+                // enregistré (5 septembre 2026) : `order_items` garde un
+                // nom recopié au moment de l'achat plutôt qu'une colonne
+                // dédiée, pas besoin de migration pour que la vendeuse
+                // voie le choix de la cliente dans le détail.
+                'product_name':
+                    l.selectedOption == null ? l.product.name : '${l.product.name} — ${l.selectedOption}',
                 'quantity': l.quantity,
-                'subtotal': l.subtotal,
-              })
-          .toList();
-      await _client.from('order_items').insert(items);
+              },
+          ],
+        });
 
-      createdOrderIds.add(orderId);
-      cart.clearShop(shopId);
+        createdOrderIds.add(orderId as String);
+        // Uniquement les boutiques dont la commande est réellement partie :
+        // ce qui a échoué reste dans le panier, prêt à être réessayé.
+        cart.clearShop(shopId);
+      } catch (e) {
+        failedByShop[shopLabel] = describeCheckoutError(e);
+      }
     }
 
     if (cleanPhone != ((profileRow['phone'] as String?) ?? '')) {
-      await _client.from('profiles').update({'phone': cleanPhone}).eq('id', user.id);
+      // Le téléphone est un confort ; il ne doit pas faire échouer une
+      // commande déjà payée.
+      try {
+        await _client.from('profiles').update({'phone': cleanPhone}).eq('id', user.id);
+      } catch (_) {}
     }
 
-    return createdOrderIds;
+    return CheckoutOutcome(createdOrderIds: createdOrderIds, failedByShop: failedByShop);
+  }
+
+  /// Traduit une erreur brute de PostgreSQL en une phrase lisible.
+  ///
+  /// Les deux chaînes cherchées ici sont LOAD BEARING côté base :
+  /// `orders_payment_reference_unique` est le nom de l'index unique posé
+  /// par `rattrapage_patch.sql`, et `STOCK_INSUFFISANT` le préfixe du
+  /// message levé par `order_item_stock_guard`
+  /// (`correctifs_patch.sql`, partie 3). Renommer l'un ou l'autre en base
+  /// dégrade silencieusement le message affiché ici.
+  static String describeCheckoutError(Object error) {
+    final raw = error.toString();
+    if (raw.contains('STOCK_INSUFFISANT')) {
+      return "Un article n'est plus disponible en quantité suffisante. "
+          'Ajustez la quantité et réessayez.';
+    }
+    if (raw.contains('orders_payment_reference_unique') || raw.contains('duplicate key')) {
+      return 'Cette référence de paiement a déjà servi pour une autre commande.';
+    }
+    // Reste une erreur qu'on n'a pas prévue. `PostgrestException.toString()`
+    // donne « PostgrestException(message: ..., code: 42501, details: ...) » :
+    // on n'en garde que le message, le reste ne veut rien dire pour la
+    // personne qui le lit.
+    if (error is PostgrestException) return error.message;
+    return raw.replaceFirst('Exception: ', '');
   }
 
   /// Annulation par la cliente — possible uniquement tant que la vendeuse

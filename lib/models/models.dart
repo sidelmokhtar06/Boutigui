@@ -474,6 +474,22 @@ class CartLine {
   String get cartKey => selectedOption == null ? product.id : '${product.id}::$selectedOption';
 }
 
+/// Les six états de `orders.status`, dans l'ordre du parcours et dans le
+/// même ordre que la contrainte `check` de `marketplace_schema.sql`.
+///
+/// Ajouté le 21 septembre 2026 (audit) : `updateOrderStatus` acceptait
+/// jusque-là n'importe quelle chaîne et la base la refusait avec une
+/// erreur de contrainte brute. Les clés de traduction correspondantes
+/// s'appellent `order_status_<valeur>` (voir `core/strings.dart`).
+const List<String> kOrderStatuses = [
+  'pending',
+  'confirmed',
+  'preparing',
+  'delivering',
+  'delivered',
+  'cancelled',
+];
+
 class OrderModel {
   final String id;
   final String shopId;

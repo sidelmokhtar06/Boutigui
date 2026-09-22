@@ -277,14 +277,14 @@ class _PhotoPositionScreenState extends State<PhotoPositionScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline, color: Colors.white70, size: 18),
-                  const SizedBox(width: 10),
-                  const Expanded(
+                  Icon(Icons.info_outline, color: Colors.white70, size: 18),
+                  SizedBox(width: 10),
+                  Expanded(
                     child: Text(
                       "Drag the photo, and pinch with two fingers to zoom in/out, to choose what should always stay visible, whatever card it appears on in the app.",
                       style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
@@ -469,7 +469,7 @@ class _ProductCardState extends State<ProductCard> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  ColoredBox(color: AppTheme.imageBg),
+                  const ColoredBox(color: AppTheme.imageBg),
                   // **Une seule photo par carte — 10 septembre 2026.**
                   //
                   // Les cartes affichaient un carrousel : on pouvait faire
@@ -724,7 +724,7 @@ class _ProductFeedCardState extends State<ProductFeedCard> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    ColoredBox(color: AppTheme.imageBg),
+                    const ColoredBox(color: AppTheme.imageBg),
                     // Plein cadre depuis le 5 septembre 2026 (nuit) — même
                     // correctif que ProductCard : voir sa doc plus haut
                     // ("la coeur doit être toujours sur la photo").
@@ -902,11 +902,11 @@ class _SellerMiniHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppTheme.ink),
                 ),
-                Text(
+                const Text(
                   'Boutique',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 12, color: AppTheme.muted),
+                  style: TextStyle(fontSize: 12, color: AppTheme.muted),
                 ),
               ],
             ),

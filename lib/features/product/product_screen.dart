@@ -1,6 +1,5 @@
 import 'package:flutter/cupertino.dart' show CupertinoIcons;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/money.dart';
@@ -76,9 +75,10 @@ import '../widgets.dart';
 ///    déplacée ici (elle était plus bas, sous un titre "Description")
 ///  - "Show Translation" -> RETIRÉ : l'app n'a pas de traduction
 ///    automatique, ce lien ne mènerait nulle part
-///  - bande grise "Delivery from Estonia" -> bande grise pleine largeur
-///    avec la mention de livraison déjà utilisée partout dans l'app
-///    (voir [_DeliveryBand])
+///  - bande grise "Delivery from Estonia" -> RETIRÉE. Elle existait sous
+///    forme d'un widget `_DeliveryBand`, supprimé le 21 septembre 2026
+///    (audit) : plus aucun écran ne l'affichait depuis un remaniement non
+///    daté, `flutter analyze` la signalait comme code mort.
 ///  - bouton "Write to the seller" -> bouton pleine largeur qui ouvre
 ///    WhatsApp avec la boutique (remplace l'ancien bouton "Contacter sur
 ///    WhatsApp" plus discret)
@@ -240,35 +240,6 @@ class _WriteToSellerButton extends StatelessWidget {
             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppTheme.ink),
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// Bande de livraison grise, PLEINE LARGEUR (pas de marge sur les côtés) —
-/// comme la bande "Delivery from Estonia" de la capture. C'est pour elle
-/// que le contenu de la fiche produit est découpé en plusieurs slivers :
-/// une bande bord à bord ne peut pas vivre à l'intérieur du `Padding`
-/// horizontal du reste du texte.
-class _DeliveryBand extends StatelessWidget {
-  final String label;
-
-  const _DeliveryBand({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      color: AppTheme.panel,
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-      child: Row(
-        children: [
-          const Icon(Icons.local_shipping_outlined, size: 19, color: AppTheme.ink2),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(label, style: const TextStyle(fontSize: 14, color: AppTheme.ink)),
-          ),
-        ],
       ),
     );
   }
@@ -835,7 +806,7 @@ class _ProductImageHeader extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          ColoredBox(color: AppTheme.imageBg),
+          const ColoredBox(color: AppTheme.imageBg),
           PageView.builder(
             controller: controller,
             onPageChanged: onPageChanged,
@@ -893,20 +864,12 @@ class _RoundIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final Color color;
-  // Retourne l'icône à l'horizontale — 15 septembre 2026, pour le bouton
-  // de partage (voir plus bas) : `Icons.reply_outlined` retournée ressemble
-  // à la flèche de partage de la référence envoyée par Emina, sans avoir à
-  // ajouter une nouvelle icône.
-  final bool flipHorizontal;
 
-  const _RoundIconButton({required this.icon, required this.onTap, this.color = AppTheme.ink, this.flipHorizontal = false});
+  const _RoundIconButton({required this.icon, required this.onTap, this.color = AppTheme.ink});
 
   @override
   Widget build(BuildContext context) {
-    Widget child = Icon(icon, size: 19, color: color);
-    if (flipHorizontal) {
-      child = Transform.flip(flipX: true, child: child);
-    }
+    final child = Icon(icon, size: 19, color: color);
     return Material(
       color: Colors.white.withValues(alpha: 0.92),
       shape: const CircleBorder(),
@@ -1187,42 +1150,6 @@ class _SoldOutLinePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
-
-/// Choix en texte (taille, contenance...). Barré s'il est épuisé.
-class _TextChoice extends StatelessWidget {
-  final String label;
-  final bool selected;
-  final bool soldOut;
-  final VoidCallback? onTap;
-
-  const _TextChoice({required this.label, required this.selected, required this.soldOut, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
-        decoration: BoxDecoration(
-          color: selected ? AppTheme.ink : Colors.transparent,
-          border: Border.all(color: selected ? AppTheme.ink : AppTheme.line),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: soldOut ? AppTheme.muted : (selected ? Colors.white : AppTheme.ink),
-            decoration: soldOut ? TextDecoration.lineThrough : null,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Fenêtre de dépôt d'avis — étoiles + commentaire facultatif (15
 /// septembre 2026, demande explicite). N'apparaît que depuis un bouton
 /// déjà gardé par [_ProductScreenState._reviewableOrderId] ; la base

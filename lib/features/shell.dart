@@ -95,8 +95,10 @@ class ShellState extends State<Shell> {
       MaterialPageRoute(builder: (_) => const VendorCategoriesScreen()),
     );
     // Le rôle a pu changer pendant la visite (création de boutique) : on
-    // le relit pour que l'écran Compte suive.
-    if (mounted) await context.read<RoleController>().refresh();
+    // le relit pour que l'écran Compte suive. `context.mounted` et non
+    // `mounted` : c'est le contexte reçu en paramètre qu'on réutilise
+    // après l'attente, pas celui de ce State (21 septembre 2026, audit).
+    if (context.mounted) await context.read<RoleController>().refresh();
   }
 
   @override

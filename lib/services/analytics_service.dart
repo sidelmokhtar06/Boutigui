@@ -216,7 +216,16 @@ class AnalyticsService {
       salesByDay: points,
       revenueByProvider: byProvider,
       topProducts: products.take(5).toList(),
-      slowProducts: products.reversed.take(3).toList(),
+      // Les deux listes ne doivent JAMAIS se recouper (21 septembre 2026,
+      // audit) : `products.reversed.take(3)` prenait les trois derniers
+      // d'une liste qui en compte souvent moins de huit, si bien qu'une
+      // boutique de trois produits voyait les mêmes articles affichés à la
+      // fois en « meilleures ventes » et en « ventes lentes ». En dessous
+      // Les ventes lentes sont donc ce qui RESTE une fois les cinq
+      // meilleures prises, trois au plus. Cinq produits ou moins : la
+      // liste est vide, et l'écran n'affiche pas la section — il n'y a
+      // rien à comparer, mieux vaut ne rien dire qu'inventer un classement.
+      slowProducts: products.reversed.take((products.length - 5).clamp(0, 3)).toList(),
       ordersByWeekday: byWeekday,
       awaitingVerification: awaiting,
       verifiedCount: verified,

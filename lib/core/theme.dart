@@ -22,6 +22,12 @@ class AppTheme {
   static const Color panel = Color(0xFFF6F3F4); // panneaux/bandes légèrement teintés
   static const Color card = Color(0xFFFFFFFF); // cartes (même ton que le fond, séparées par une bordure)
   static const Color line = Color(0xFFE8E2E3); // bordures / séparateurs
+  // Fond de l'écran d'ouverture — 22 septembre 2026. Le nouveau logo « b »
+  // est blanc et gris : posé sur le blanc des écrans, il disparaîtrait.
+  // Cette valeur reprend le fond sur lequel la marque a été dessinée, pour
+  // que le splash montre le logo tel qu'il a été conçu ; le voile fond
+  // ensuite vers le blanc de l'application (voir splash_screen.dart).
+  static const Color splashDark = Color(0xFF1A1A1A);
   static const Color hair = Color(0xFFE8E2E3); // alias conservé pour compat (ancien nom "hemy")
   // Rose retiré entièrement de l'application le 15 septembre 2026 (demande
   // explicite : "regardez la couleur rose ... supprimez-la complètement").
@@ -281,15 +287,15 @@ class AppTheme {
       ),
       textTheme: base.apply(bodyColor: ink, displayColor: ink),
       
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: bg,
         foregroundColor: ink,
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 1,
         surfaceTintColor: bg,
-        titleTextStyle: const TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w700),
-        iconTheme: const IconThemeData(color: ink),
+        titleTextStyle: TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w700),
+        iconTheme: IconThemeData(color: ink),
       ),
       cardTheme: CardThemeData(
         color: card,
@@ -425,15 +431,15 @@ class AdminTheme {
       ),
       textTheme: base.apply(bodyColor: ink, displayColor: ink),
       
-      appBarTheme: AppBarTheme(
+      appBarTheme: const AppBarTheme(
         backgroundColor: bg,
         foregroundColor: ink,
         centerTitle: false,
         elevation: 0,
         scrolledUnderElevation: 1,
         surfaceTintColor: bg,
-        titleTextStyle: const TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w700),
-        iconTheme: const IconThemeData(color: ink),
+        titleTextStyle: TextStyle(color: ink, fontSize: 18, fontWeight: FontWeight.w700),
+        iconTheme: IconThemeData(color: ink),
       ),
       cardTheme: CardThemeData(
         color: panel,

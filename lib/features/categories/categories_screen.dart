@@ -102,9 +102,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             //    texte du champ au même corps que le titre.
             // Ces réglages ne s'appliquent qu'ici : l'accueil garde son
             // champ tel quel (valeurs par défaut de [AppSearchField]).
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-              child: const SizedBox(
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 14, 20, 0),
+              child: SizedBox(
                 width: double.infinity,
                 child: Text(
                   // Mot repris tel quel de la capture (Emina, 5 septembre
@@ -166,39 +166,17 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   // pas de bord à bord. Espace blanc avant la première
                   // bande : 36 px = 12 pt, la même valeur que l'espace
                   // entre deux bandes ([AppTheme.categorySeparatorHeight]).
-                  // Grille de cartes — 20 septembre 2026, même langage
-                  // visuel que l'accueil (voir [CategoryCard]).
-                  //
-                  // REMPLACE les bandes pleine largeur mesurées au pixel le
-                  // 5 septembre 2026. Ce qu'on perd : une bande montrait
-                  // une grande photo et se lisait d'un coup d'œil. Ce qu'on
-                  // gagne : six catégories visibles sans défiler au lieu de
-                  // deux et demie, et une catégorie qui a enfin la même
-                  // tête ici que sur l'accueil. Les anciennes bandes
-                  // restent dans la sauvegarde si le rendu ne convient pas.
-                  return GridView.builder(
+                  return ListView.separated(
                     // Voir home_screen.dart (10 septembre 2026, révisé le
                     // 13) : petite marge plutôt que zéro, contre les photos
                     // noires lors d'un aller-retour de défilement.
                     cacheExtent: 800,
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      // Deux colonnes sur un téléphone, trois dès qu'il y a
-                      // la place — une carte plus large que ~210 pt devient
-                      // une affiche, pas un choix dans une liste.
-                      crossAxisCount:
-                          (MediaQuery.sizeOf(context).width / 210).floor().clamp(2, 4),
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      // Photo en 4:3 plus la bande du nom en dessous.
-                      childAspectRatio: 0.82,
-                    ),
+                    padding: const EdgeInsets.only(top: AppTheme.categorySeparatorHeight),
                     itemCount: categories.length,
-                    itemBuilder: (context, i) => CategoryCard(
-                      key: ValueKey(categories[i].id),
-                      category: categories[i],
-                      imageAspectRatio: 4 / 3,
-                      onTap: () => _openCategory(categories[i]),
+                    separatorBuilder: (_, __) => const _CategorySeparator(),
+                    itemBuilder: (context, i) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _CategoryBand(category: categories[i], onTap: () => _openCategory(categories[i])),
                     ),
                   );
                 },
@@ -259,15 +237,87 @@ class _GenderTabs extends StatelessWidget {
               ),
             ),
           ),
-          // Trait actif en VERT depuis le 20 septembre 2026 : c'est la
-          // couleur d'accent de l'application, l'encre servait faute de
-          // mieux. Le libellé reste en gras : l'onglet actif ne se
-          // distingue jamais par la seule couleur.
-          Container(height: 2, color: active ? AppTheme.green : AppTheme.line),
+          Container(height: 2, color: active ? AppTheme.ink : AppTheme.line),
         ],
       ),
     );
   }
 }
 
+/// Espace blanc pleine largeur entre deux bandes — pas une ligne colorée :
+/// mesuré à 12 pt sur la capture de référence (voir `categorySeparator`
+/// dans theme.dart, corrigé le 15 septembre 2026).
+class _CategorySeparator extends StatelessWidget {
+  const _CategorySeparator();
 
+  @override
+  Widget build(BuildContext context) {
+    return Container(height: AppTheme.categorySeparatorHeight, color: AppTheme.categorySeparator);
+  }
+}
+
+/// Une bande de catégorie : photo pleine largeur, nom en capitales par
+/// dessus, aligné à gauche et centré verticalement.
+///
+/// Pas de voile sombre sur la photo : le cadrage/zoom choisi côté admin
+/// (voir categories_admin_screen.dart et [Category.focalX]/[focalY]/[zoom])
+/// place déjà le sujet à l'écart du texte, exactement comme sur la capture
+/// où les mannequins sont à droite et le fond clair à gauche.
+class _CategoryBand extends StatelessWidget {
+  final Category category;
+  final VoidCallback onTap;
+
+  const _CategoryBand({required this.category, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    // Largeur réelle de la bande : plein écran moins les 16 pt de marge
+    // ajoutés de chaque côté dans `CategoriesScreen` (Padding autour de
+    // chaque `_CategoryBand`). `AspectRatio` s'adapte déjà tout seul à
+    // cette largeur réduite ; seule la hauteur *explicite* passée à
+    // `AppImage` doit être recalculée à partir d'elle, sinon l'image
+    // garde l'ancienne hauteur pleine largeur.
+    final bandWidth = MediaQuery.sizeOf(context).width - 32;
+    return InkWell(
+      onTap: onTap,
+      child: AspectRatio(
+        aspectRatio: kCategoryImageAspectRatio,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: AppTheme.categoryBand),
+            AppImage(
+              url: category.imageUrl,
+              fit: BoxFit.cover,
+              alignment: Alignment(category.focalX * 2 - 1, category.focalY * 2 - 1),
+              zoom: category.zoom,
+              height: bandWidth / kCategoryImageAspectRatio,
+            ),
+            Positioned(
+              // 24 pt — mesuré sur la capture de référence : le texte
+              // commence à 40 pt du bord de l'écran, moins les 16 pt de
+              // marge de la bande elle-même = 24 pt depuis le bord de la
+              // bande.
+              left: 24,
+              top: 0,
+              bottom: 0,
+              right: 12,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  // Casse naturelle, plus de majuscules forcées — 15
+                  // septembre 2026, pour coller à la référence envoyée par
+                  // Emina ("Balenciaga", pas "BALENCIAGA").
+                  category.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTheme.categoryLabel(),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

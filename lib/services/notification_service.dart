@@ -33,15 +33,20 @@ class NotificationService {
     return rows.map((r) => AppNotification.fromMap(r)).toList();
   }
 
+  /// **21 septembre 2026 (audit) : compté par la base, plus par l'app.**
+  /// Cette méthode rapatriait TOUTES les lignes non lues pour en prendre
+  /// la longueur, et elle tourne toutes les 30 secondes (voir
+  /// [NotificationsController]) : le coût grandissait avec l'historique de
+  /// chaque compte, pour un nombre affiché sur une pastille. `count()`
+  /// laisse PostgreSQL compter et ne transfère que l'entier.
   Future<int> unreadCount() async {
     final user = _client.auth.currentUser;
     if (user == null) return 0;
-    final rows = await _client
+    return _client
         .from('notifications')
-        .select('id')
+        .count(CountOption.exact)
         .eq('user_id', user.id)
         .eq('is_read', false);
-    return rows.length;
   }
 
   Future<void> markAllRead() async {

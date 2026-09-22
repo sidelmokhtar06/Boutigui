@@ -25,11 +25,26 @@ class VendorService {
   /// La boutique de l'utilisateur connecté, s'il en a déjà créé une (une
   /// seule par personne, gérée côté application — pas de contrainte en
   /// base, mais l'écran ne propose plus "créer" une fois qu'on en a une).
+  ///
+  /// **21 septembre 2026 (audit) : `.limit(1)` remplace `.maybeSingle()`.**
+  /// `maybeSingle()` LÈVE une exception dès qu'il trouve deux lignes, et
+  /// rien n'empêchait un compte d'avoir deux boutiques (double appui sur
+  /// « créer », insertion manuelle). `RoleController.refresh` avalait
+  /// l'exception : la vendeuse perdait l'accès à sa boutique sans aucun
+  /// message, et l'écran lui reproposait d'en créer une — une troisième.
+  /// L'index unique `shops_owner_unique` (`correctifs_patch.sql`, partie
+  /// 6) empêche maintenant le cas de se reproduire ; cette lecture reste
+  /// tolérante pour les bases où il n'a pas encore été posé.
   Future<Shop?> fetchMyShop() async {
     final userId = _client.auth.currentUser?.id;
     if (userId == null) return null;
-    final row = await _client.from('shops').select().eq('owner_id', userId).maybeSingle();
-    return row == null ? null : Shop.fromMap(row);
+    final rows = await _client
+        .from('shops')
+        .select()
+        .eq('owner_id', userId)
+        .order('created_at')
+        .limit(1);
+    return rows.isEmpty ? null : Shop.fromMap(rows.first);
   }
 
   Future<Shop> createMyShop({
@@ -51,7 +66,8 @@ class VendorService {
     double? lat,
     double? lng,
   }) async {
-    final userId = _client.auth.currentUser!.id;
+    final userId = _client.auth.currentUser?.id;
+    if (userId == null) throw Exception('Not signed in');
     final row = await _client
         .from('shops')
         .insert({
@@ -314,11 +330,28 @@ class VendorService {
     return rows.map((r) => OrderItemModel.fromMap(r)).toList();
   }
 
+  /// [status] : un des six états de `orders.status`.
+  ///
+  /// **`.select()` ajouté le 21 septembre 2026 (audit).** Un `update`
+  /// refusé par RLS ne lève pas d'erreur — PostgreSQL modifie zéro ligne
+  /// et signale un succès. Sans ce contrôle, une vendeuse voyait le statut
+  /// changer à l'écran et revenir en arrière au rechargement suivant.
+  /// C'est la règle écrite dans `lib/services/AGENTS.md`, appliquée ici
+  /// comme `setPaymentStatus` le fait déjà.
   Future<void> updateOrderStatus(String id, String status) async {
-    await _client.from('orders').update({
+    if (!kOrderStatuses.contains(status)) {
+      throw ArgumentError.value(status, 'status', 'Statut de commande inconnu');
+    }
+    final updated = await _client.from('orders').update({
       'status': status,
       if (status == 'confirmed') 'confirmed_at': DateTime.now().toIso8601String(),
-    }).eq('id', id);
+    }).eq('id', id).select('id');
+    if (updated.isEmpty) {
+      throw Exception(
+        "Le statut de la commande n'a pas pu être enregistré (la base a "
+        'refusé la modification).',
+      );
+    }
   }
 
   /// Vérification du paiement par la vendeuse (20 septembre 2026).

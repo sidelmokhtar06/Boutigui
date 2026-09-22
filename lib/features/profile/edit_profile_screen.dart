@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../../core/settings_controller.dart';
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
-import '../../services/role_controller.dart';
 import '../widgets.dart';
 
 /// Indicatif unique : la Mauritanie (21 septembre 2026, demande explicite).
@@ -142,12 +141,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   Future<void> _signOut() async {
     setState(() => _signingOut = true);
+    // Le rôle est lié au compte et disparaît avec lui : depuis le 21
+    // septembre 2026, `RoleController` écoute lui-même la session et se
+    // vide à la déconnexion, d'où qu'elle vienne. Cet écran n'a donc plus
+    // à penser à appeler `clear()` — les trois autres sorties de
+    // l'application ne le faisaient pas, et gardaient la boutique du
+    // compte précédent en mémoire.
     await context.read<AuthService>().signOut();
     if (!mounted) return;
-    // Le rôle est lié au compte : il doit disparaître en même temps, sinon
-    // l'écran Compte continuerait d'afficher "Espace vendeuse" pour la
-    // personne suivante (6 septembre 2026).
-    context.read<RoleController>().clear();
     Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
@@ -155,22 +156,25 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final t = context.read<SettingsController>().t;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      // `dialogContext` et non le `context` de l'écran : c'est la boîte de
+      // dialogue qu'on referme, pas l'écran derrière (21 septembre 2026).
+      builder: (dialogContext) => AlertDialog(
         backgroundColor: AppTheme.card,
         title: Text(t('delete_account_title')),
         content: Text(t('delete_account_body')),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: Text(t('cancel'))),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: Text(t('cancel'))),
           TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
             child: Text(t('delete_account_confirm'), style: const TextStyle(color: AppTheme.red)),
           ),
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true || !mounted) return;
     setState(() => _deleting = true);
-    final error = await context.read<AuthService>().deleteAccount();
+    final auth = context.read<AuthService>();
+    final error = await auth.deleteAccount();
     if (!mounted) return;
     if (error != null) {
       setState(() => _deleting = false);
